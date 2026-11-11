@@ -9,7 +9,7 @@ Un'interfaccia grafica per scaricare e convertire. Si apre su una schermata semp
 ## Schermata semplice
 
 - **Sito**: YouTube, Spotify, Instagram o TikTok. Incollando un link il sito viene riconosciuto da solo; i link di altri siti passano da yt-dlp.
-- **Link**: un link incollato diventa subito una riga della lista; una playlist (o un album di Spotify) aggiunge una riga per ogni elemento.
+- **Link**: un link incollato diventa subito una riga della lista; una playlist (o un album di Spotify) aggiunge una riga per ogni elemento. Vale anche per il link di un video aperto da una playlist (`watch?v=…&list=…`): per avere solo quel video, togli la parte `&list=…`.
 - **Video e Audio**: le due spunte decidono cosa scaricare; per ciascuno si scelgono il formato e, con il cursore, la qualità (risoluzione del video, bitrate dell'audio). Le scelte valgono per i link aggiunti dopo: ogni riga conserva quelle con cui è stata aggiunta.
 - **Lista**: ogni riga ha il proprio menu "Video + audio / Solo video / Solo audio", il pulsante per scaricarla o fermarla, la barra di avanzamento con la velocità e il cestino per toglierla. "Scarica tutti" avvia tutta la lista, tre elementi alla volta.
 

@@ -36,6 +36,7 @@
 #include <QToolButton>
 #include <QToolTip>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -91,6 +92,16 @@ bool isUrl(const QString &token)
                                          QRegularExpression::CaseInsensitiveOption);
     return token.startsWith(QLatin1String("http://"), Qt::CaseInsensitive)
            || token.startsWith(QLatin1String("https://"), Qt::CaseInsensitive) || bare.match(token).hasMatch();
+}
+
+// "watch?v=...&list=..." names a video and the playlist it was opened from:
+// the playlist is what gets added. YouTube's automatic mixes ("RD...") are
+// endless and personal lists (watch later, liked) need a login, so for those
+// only the video is taken.
+bool wantsWholePlaylist(const QString &url)
+{
+    const QString list = QUrlQuery(QUrl(url)).queryItemValue(QStringLiteral("list"));
+    return !(list.startsWith(QLatin1String("RD")) || list == QLatin1String("WL") || list == QLatin1String("LL"));
 }
 
 QStringList splitTokens(const QString &text)
@@ -982,8 +993,8 @@ DownloadRow *SimplePage::addRow(Service service, DownloadRow::Engine engine, con
                                 const DownloadSettings &settings, int index)
 {
     auto *row = new DownloadRow(service, engine, target, settings);
-    const bool atEnd = index < 0 || index >= m_rows.size();
-    if (atEnd)
+    const bool pasted = index < 0; // the entries of a playlist do not move the view
+    if (pasted || index > m_rows.size())
         index = m_rows.size();
     m_rows.insert(index, row);
     m_rowsLayout->insertWidget(index, row);
@@ -994,7 +1005,7 @@ DownloadRow *SimplePage::addRow(Service service, DownloadRow::Engine engine, con
         schedulePump();
     });
     updateSummary();
-    if (atEnd)
+    if (pasted)
         QTimer::singleShot(0, row, [this, row] { m_scroll->ensureWidgetVisible(row, 0, 0); });
     return row;
 }
@@ -1062,6 +1073,7 @@ void SimplePage::resolveWithYtDlp(DownloadRow *row, const QString &url, const QS
     };
 
     auto *process = new QProcess(row); // stopped with the row
+    process->setProperty("reading", true);
     process->setProcessEnvironment(toolEnvironment());
     connect(process, &QProcess::readyReadStandardOutput, row, [process, pending, takeLines] {
         pending->buffer += process->readAllStandardOutput();
@@ -1071,7 +1083,9 @@ void SimplePage::resolveWithYtDlp(DownloadRow *row, const QString &url, const QS
         pending->buffer += process->readAllStandardOutput();
         takeLines(true);
         const QString error = cleanError(QString::fromUtf8(process->readAllStandardError()));
+        process->setProperty("reading", false);
         process->deleteLater();
+        updateSummary();
         if (pending->count > 0)
             return;
         if (!instagramPost.isEmpty()) {
@@ -1088,7 +1102,8 @@ void SimplePage::resolveWithYtDlp(DownloadRow *row, const QString &url, const QS
             row->setFailed(tr("Impossibile avviare yt-dlp"));
         }
     });
-    process->start(program, {QStringLiteral("--flat-playlist"), QStringLiteral("--no-playlist"),
+    process->start(program, {QStringLiteral("--flat-playlist"),
+                             wantsWholePlaylist(url) ? QStringLiteral("--yes-playlist") : QStringLiteral("--no-playlist"),
                              QStringLiteral("--no-warnings"), QStringLiteral("--no-colors"), QStringLiteral("--print"),
                              QStringLiteral("%(.{title,webpage_url,url,duration,playlist_title,channel,uploader})j"),
                              url});
@@ -1198,7 +1213,11 @@ void SimplePage::pump()
 void SimplePage::updateSummary()
 {
     int waiting = 0, active = 0, done = 0;
+    bool reading = false; // a playlist whose entries are still arriving
     for (const DownloadRow *row : std::as_const(m_rows)) {
+        const QList<QProcess *> processes = row->findChildren<QProcess *>(Qt::FindDirectChildrenOnly);
+        for (const QProcess *process : processes)
+            reading = reading || process->property("reading").toBool();
         switch (row->state()) {
         case DownloadRow::Ready:
         case DownloadRow::Failed:
@@ -1222,6 +1241,8 @@ void SimplePage::updateSummary()
         parts << tr("%1 in corso").arg(active);
     if (done > 0)
         parts << (done == 1 ? tr("1 completato") : tr("%1 completati").arg(done));
+    if (reading)
+        parts << tr("lettura dei link in corso…");
     m_summaryLabel->setText(parts.join(QStringLiteral("  ·  ")));
     m_emptyLabel->setVisible(m_rows.isEmpty());
     m_clearButton->setEnabled(!m_rows.isEmpty());
