@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ytmlp app icon: a play triangle with a download badge. 1024x1024, macOS icon grid. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="200" y1="100" x2="824" y2="924">
+      <stop offset="0" stop-color="#ff7a45"/>
+      <stop offset="0.55" stop-color="#f0283c"/>
+      <stop offset="1" stop-color="#c2123a"/>
+    </linearGradient>
+    <linearGradient id="badge" gradientUnits="userSpaceOnUse" x1="730" y1="590" x2="730" y2="870">
+      <stop offset="0" stop-color="#34343c"/>
+      <stop offset="1" stop-color="#17171c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background tile -->
+  <rect x="100" y="100" width="824" height="824" rx="186" ry="186" fill="url(#bg)"/>
+
+  <!-- play triangle -->
+  <path d="M 405 322 L 405 702 L 722 512 Z" fill="#ffffff" stroke="#ffffff" stroke-width="64"
+        stroke-linejoin="round"/>
+
+  <!-- download badge: a ring in the background colour separates it from the triangle -->
+  <circle cx="730" cy="730" r="166" fill="url(#bg)"/>
+  <circle cx="730" cy="730" r="140" fill="url(#badge)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 730 648 L 730 762"/>
+    <path d="M 676 712 L 730 766 L 784 712"/>
+    <path d="M 668 812 L 792 812"/>
+  </g>
+</svg>
