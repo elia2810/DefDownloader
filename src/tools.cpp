@@ -202,14 +202,13 @@ QList<ListEntry> parseFfmpegList(const QString &text, int nameColumn, bool hasSe
 // come last, so a version installed (and kept up to date) by the user wins.
 static QStringList extraToolDirs()
 {
-    const QString home = QDir::homePath();
     QStringList dirs = {
 #ifndef Q_OS_WIN
         QStringLiteral("/opt/homebrew/bin"),
         QStringLiteral("/usr/local/bin"),
         QStringLiteral("/opt/local/bin"),
-        home + QStringLiteral("/.local/bin"),
-        home + QStringLiteral("/bin"),
+        QDir::homePath() + QStringLiteral("/.local/bin"),
+        QDir::homePath() + QStringLiteral("/bin"),
 #endif
         QCoreApplication::applicationDirPath(),
     };

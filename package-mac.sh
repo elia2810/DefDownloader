@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds ytmlp and produces a self-contained dist/ytmlp.app and dist/ytmlp.dmg
+# Builds ytmlp and produces a self-contained dist/ytmlp.app and dist/ytmlp-macos-arm64.dmg
 # that run on Macs without Qt installed.
 set -eu
 cd "$(dirname "$0")"
@@ -78,7 +78,7 @@ codesign --verify --deep --strict "$APP"
 STAGE="$(mktemp -d)"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname ytmlp -srcfolder "$STAGE" -ov -format UDZO dist/ytmlp.dmg >/dev/null
+hdiutil create -volname ytmlp -srcfolder "$STAGE" -ov -format UDZO dist/ytmlp-macos-arm64.dmg >/dev/null
 rm -rf "$STAGE"
 
-echo "Created $APP and dist/ytmlp.dmg"
+echo "Created $APP and dist/ytmlp-macos-arm64.dmg"

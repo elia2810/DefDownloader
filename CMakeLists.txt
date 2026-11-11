@@ -21,6 +21,11 @@ qt_add_executable(ytmlp WIN32 MACOSX_BUNDLE
     src/tooltab.cpp
 )
 
+if(WIN32)
+    # Icon of the .exe; resources/ytmlp.ico is generated from resources/icon.svg.
+    target_sources(ytmlp PRIVATE resources/ytmlp.rc)
+endif()
+
 target_link_libraries(ytmlp PRIVATE Qt6::Widgets)
 
 set_target_properties(ytmlp PROPERTIES

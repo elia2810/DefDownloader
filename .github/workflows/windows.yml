@@ -1,0 +1,109 @@
+name: Windows build
+
+# Builds the app for Windows, bundles Qt, yt-dlp and ffmpeg next to the .exe
+# and zips the folder. On a version tag (v*) the zip is attached to the
+# release of that tag.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          cmake --build build --config Release
+
+      - name: Bundle Qt
+        run: |
+          New-Item -ItemType Directory -Force dist/ytmlp | Out-Null
+          Copy-Item build/Release/ytmlp.exe dist/ytmlp/
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw `
+            --no-compiler-runtime dist/ytmlp/ytmlp.exe
+          # Visual C++ runtime next to the app, for PCs that do not have it installed.
+          foreach ($dll in 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll') {
+            $path = Join-Path $env:SystemRoot "System32\$dll"
+            if (Test-Path $path) { Copy-Item $path dist/ytmlp/ }
+          }
+
+      # The app looks for the tools in its own folder when none are installed.
+      - name: Bundle yt-dlp
+        run: |
+          gh release download --repo yt-dlp/yt-dlp --pattern yt-dlp.exe --pattern SHA2-256SUMS --dir tools
+          $line = Select-String -Path tools/SHA2-256SUMS -Pattern '\s+yt-dlp\.exe$' | Select-Object -First 1
+          $expected = ($line.Line -split '\s+')[0]
+          $actual = (Get-FileHash tools/yt-dlp.exe -Algorithm SHA256).Hash.ToLower()
+          if (-not $expected -or $expected -ne $actual) { throw "yt-dlp.exe checksum mismatch: expected '$expected', got '$actual'" }
+          Copy-Item tools/yt-dlp.exe dist/ytmlp/
+
+      - name: Bundle ffmpeg
+        run: |
+          $zip = 'ffmpeg-master-latest-win64-gpl-shared.zip'
+          gh release download --repo yt-dlp/FFmpeg-Builds --pattern $zip --pattern checksums.sha256 --dir tools
+          $line = Select-String -Path tools/checksums.sha256 -Pattern ([regex]::Escape($zip) + '$') | Select-Object -First 1
+          $expected = ($line.Line -split '\s+')[0]
+          $actual = (Get-FileHash "tools/$zip" -Algorithm SHA256).Hash.ToLower()
+          if (-not $expected -or $expected -ne $actual) { throw "$zip checksum mismatch: expected '$expected', got '$actual'" }
+          Expand-Archive "tools/$zip" -DestinationPath tools/ffmpeg
+          $bin = (Get-ChildItem tools/ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          Copy-Item "$bin/ffmpeg.exe", "$bin/ffprobe.exe" dist/ytmlp/
+          Copy-Item "$bin/*.dll" dist/ytmlp/
+
+      # Runs the packaged app: first the parsers against the bundled tools,
+      # then the real window, saved as a picture.
+      - name: Smoke test
+        run: |
+          $exe = Resolve-Path dist/ytmlp/ytmlp.exe
+          $p = Start-Process $exe -ArgumentList '--selftest' -RedirectStandardOutput selftest.txt -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'self-test timed out' }
+          $out = Get-Content selftest.txt -Raw
+          $out -split "`n" | Where-Object { $_ -notmatch '^      ' }
+          if ($out -notmatch '== yt-dlp: \S.*yt-dlp\.exe') { throw 'bundled yt-dlp not found' }
+          if ($out -notmatch '== ffmpeg: \S.*ffmpeg\.exe') { throw 'bundled ffmpeg not found' }
+          $totals = [regex]::Matches($out, 'total options: (\d+)') | ForEach-Object { [int]$_.Groups[1].Value }
+          if ($totals.Count -ne 2 -or ($totals | Where-Object { $_ -lt 100 })) { throw "options not parsed: $totals" }
+
+          $shot = Join-Path $PWD 'window.png'
+          $p = Start-Process $exe -ArgumentList '--screenshot', $shot, '1', 'codec' -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'the window did not close' }
+          if (-not (Test-Path $shot)) { throw 'the window could not be captured' }
+
+      - name: Zip
+        run: Compress-Archive -Path dist/ytmlp -DestinationPath ytmlp-windows-x64.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ytmlp-windows-x64
+          path: |
+            ytmlp-windows-x64.zip
+            window.png
+            selftest.txt
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $tag = '${{ github.ref_name }}'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create $tag --title $tag --notes '' --verify-tag }
+          gh release upload $tag ytmlp-windows-x64.zip --clobber
