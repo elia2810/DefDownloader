@@ -7,6 +7,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
+#include <QFile>
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFormLayout>
@@ -18,6 +19,7 @@
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
@@ -133,6 +135,36 @@ QPushButton *smallButton(const QString &text)
     return button;
 }
 
+// instaloader takes profile names and post shortcodes, not links: pasted
+// Instagram URLs are translated. Posts go after "--" as "-SHORTCODE".
+void instagramTargets(const QStringList &inputs, QStringList &profiles, QStringList &posts)
+{
+    static const QRegularExpression urlRe(QStringLiteral("^(?:https?://)?(?:www\\.)?instagram\\.com/([^?#]*)"),
+                                          QRegularExpression::CaseInsensitiveOption);
+    static const QStringList postKinds = {QStringLiteral("p"), QStringLiteral("reel"), QStringLiteral("reels"),
+                                          QStringLiteral("tv")};
+    for (const QString &input : inputs) {
+        const auto match = urlRe.match(input);
+        if (!match.hasMatch()) {
+            profiles << input;
+            continue;
+        }
+        const QStringList path = match.captured(1).split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        if (path.isEmpty())
+            continue;
+        if (postKinds.contains(path.at(0)) && path.size() >= 2)
+            posts << QLatin1Char('-') + path.at(1);
+        else if (path.size() >= 3 && postKinds.contains(path.at(1))) // instagram.com/user/p/CODE
+            posts << QLatin1Char('-') + path.at(2);
+        else if (path.at(0) == QLatin1String("stories") && path.size() >= 2)
+            profiles << path.at(1);
+        else if (path.at(0) == QLatin1String("explore") && path.size() >= 3 && path.at(1) == QLatin1String("tags"))
+            profiles << QLatin1Char('#') + path.at(2);
+        else
+            profiles << path.at(0);
+    }
+}
+
 QString downloadsDir()
 {
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
@@ -144,7 +176,10 @@ QString downloadsDir()
 ToolTab::ToolTab(Kind kind, QWidget *parent)
     : QWidget(parent)
     , m_kind(kind)
-    , m_toolName(kind == YtDlp ? QStringLiteral("yt-dlp") : QStringLiteral("ffmpeg"))
+    , m_toolName(kind == Ffmpeg ? QStringLiteral("ffmpeg")
+                 : kind == Spotify ? QStringLiteral("spotdl")
+                 : kind == Instagram ? QStringLiteral("instaloader")
+                 : QStringLiteral("yt-dlp"))
 {
     const QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     auto *root = new QVBoxLayout(this);
@@ -159,13 +194,39 @@ ToolTab::ToolTab(Kind kind, QWidget *parent)
         return row;
     };
 
-    if (m_kind == YtDlp) {
+    if (m_kind != Ffmpeg) {
+        QString label = tr("URL");
+        QString placeholder = tr("Uno o più URL separati da spazio");
+        m_dirKey = QStringLiteral("ytdlp/dir");
+        if (m_kind == Spotify) {
+            label = tr("Link");
+            placeholder = tr("Link Spotify di brano, album, playlist o artista; oppure \"titolo artista\" tra virgolette");
+            m_dirKey = QStringLiteral("spotify/dir");
+        } else if (m_kind == Instagram) {
+            label = tr("Profilo");
+            placeholder = tr("Nome profilo, #hashtag oppure link di un profilo, post o reel; anche più di uno");
+            m_dirKey = QStringLiteral("instagram/dir");
+        } else if (m_kind == TikTok) {
+            placeholder = tr("Link di un video TikTok o di un profilo (https://www.tiktok.com/@utente); anche più di uno");
+            m_dirKey = QStringLiteral("tiktok/dir");
+        }
         m_urlEdit = new QLineEdit;
-        m_urlEdit->setPlaceholderText(tr("Uno o più URL separati da spazio"));
+        m_urlEdit->setPlaceholderText(placeholder);
         m_urlEdit->setClearButtonEnabled(true);
-        form->addRow(tr("URL"), m_urlEdit);
+        form->addRow(label, m_urlEdit);
 
-        m_dirEdit = new QLineEdit(QSettings().value(QStringLiteral("ytdlp/dir"), downloadsDir()).toString());
+        if (m_kind == Spotify) {
+            // Filled with the operations listed in the help once it is read.
+            m_operationCombo = new QComboBox;
+            m_operationCombo->addItem(QStringLiteral("download"));
+            auto *operationRow = new QHBoxLayout;
+            operationRow->addWidget(m_operationCombo);
+            operationRow->addStretch(1);
+            form->addRow(tr("Operazione"), operationRow);
+            connect(m_operationCombo, &QComboBox::currentIndexChanged, this, &ToolTab::updatePreview);
+        }
+
+        m_dirEdit = new QLineEdit(QSettings().value(m_dirKey, downloadsDir()).toString());
         auto *browse = smallButton(tr("Sfoglia…"));
         form->addRow(tr("Cartella"), withButton(m_dirEdit, browse));
         connect(browse, &QPushButton::clicked, this, [this] {
@@ -173,11 +234,11 @@ ToolTab::ToolTab(Kind kind, QWidget *parent)
                                                                   m_dirEdit->text());
             if (!dir.isEmpty()) {
                 m_dirEdit->setText(dir);
-                QSettings().setValue(QStringLiteral("ytdlp/dir"), dir);
+                QSettings().setValue(m_dirKey, dir);
             }
         });
         connect(m_dirEdit, &QLineEdit::editingFinished, this,
-                [this] { QSettings().setValue(QStringLiteral("ytdlp/dir"), m_dirEdit->text()); });
+                [this] { QSettings().setValue(m_dirKey, m_dirEdit->text()); });
         connect(m_urlEdit, &QLineEdit::textChanged, this, &ToolTab::updatePreview);
     } else {
         m_inputEdit = new QLineEdit;
@@ -298,24 +359,45 @@ void ToolTab::loadOptions()
     m_program = findTool(m_toolName);
     if (m_program.isEmpty()) {
         showMessage(tr("%1 non trovato. Installalo oppure indica dove si trova.").arg(m_toolName), true);
-        emit optionsLoaded();
+        QTimer::singleShot(0, this, &ToolTab::optionsLoaded);
         return;
     }
-    showMessage(tr("Lettura delle opzioni di %1…").arg(m_toolName), false);
 
+    // The standalone builds of yt-dlp and spotdl need several seconds to print
+    // their help, so it is kept until the executable changes.
+    const QFileInfo info(m_program);
+    const QString stamp = QStringLiteral("%1|%2|%3")
+                              .arg(info.canonicalFilePath())
+                              .arg(info.size())
+                              .arg(info.lastModified().toSecsSinceEpoch());
+    const QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    const QString cachePath = cacheDir + QStringLiteral("/help-") + m_toolName + QStringLiteral(".txt");
+    QFile cache(cachePath);
+    if (cache.open(QIODevice::ReadOnly)) {
+        const QString cached = QString::fromUtf8(cache.readAll());
+        const qsizetype newline = cached.indexOf(QLatin1Char('\n'));
+        if (newline > 0 && cached.left(newline) == stamp && applyHelp(cached.mid(newline + 1))) {
+            QTimer::singleShot(0, this, &ToolTab::optionsLoaded);
+            return;
+        }
+        cache.close();
+    }
+
+    showMessage(tr("Lettura delle opzioni di %1…").arg(m_toolName), false);
     auto *process = new QProcess(this);
     process->setProcessEnvironment(toolEnvironment());
     process->setProcessChannelMode(QProcess::MergedChannels);
-    const auto finish = [this, process] {
+    const auto finish = [this, process, stamp, cacheDir, cachePath] {
         const QString help = QString::fromUtf8(process->readAll());
         process->deleteLater();
-        const QList<OptionSection> sections = m_kind == YtDlp ? parseYtDlpHelp(help)
-                                                              : parseFfmpegHelp(help);
-        clearOptions();
-        if (sections.isEmpty())
+        if (applyHelp(help)) {
+            QDir().mkpath(cacheDir);
+            QFile out(cachePath);
+            if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                out.write((stamp + QLatin1Char('\n') + help).toUtf8());
+        } else {
             showMessage(tr("Impossibile leggere le opzioni da %1.").arg(m_program), true);
-        else
-            buildOptionWidgets(sections);
+        }
         emit optionsLoaded();
     };
     connect(process, &QProcess::finished, this, finish);
@@ -323,10 +405,35 @@ void ToolTab::loadOptions()
         if (error == QProcess::FailedToStart)
             finish();
     });
-    process->start(m_program, m_kind == YtDlp
-                                  ? QStringList{QStringLiteral("--help")}
-                                  : QStringList{QStringLiteral("-hide_banner"), QStringLiteral("-h"),
-                                                QStringLiteral("long")});
+    process->start(m_program, m_kind == Ffmpeg
+                                  ? QStringList{QStringLiteral("-hide_banner"), QStringLiteral("-h"),
+                                                QStringLiteral("long")}
+                                  : QStringList{QStringLiteral("--help")});
+}
+
+// Parses the help text and builds the option widgets; false when nothing was understood.
+bool ToolTab::applyHelp(const QString &help)
+{
+    const QList<OptionSection> sections = m_kind == Ffmpeg ? parseFfmpegHelp(help)
+                                          : m_kind == Spotify || m_kind == Instagram ? parseArgparseHelp(help)
+                                          : parseYtDlpHelp(help);
+    if (sections.isEmpty())
+        return false;
+    if (m_operationCombo) {
+        // spotdl lists its operations as a positional argument: "  {download,save,...}"
+        static const QRegularExpression operationsRe(QStringLiteral("^\\s+\\{([\\w,-]+)\\}\\s*$"),
+                                                     QRegularExpression::MultilineOption);
+        const auto match = operationsRe.match(help);
+        if (match.hasMatch()) {
+            const QString current = m_operationCombo->currentText();
+            m_operationCombo->clear();
+            m_operationCombo->addItems(match.captured(1).split(QLatin1Char(',')));
+            m_operationCombo->setCurrentText(current);
+        }
+    }
+    clearOptions();
+    buildOptionWidgets(sections);
+    return true;
 }
 
 void ToolTab::clearOptions()
@@ -485,9 +592,29 @@ void ToolTab::addValueHelpers(Row &row, QHBoxLayout *layout)
     const QString arg = row.def.argName;
     QLineEdit *value = row.value;
 
-    const bool wantsFile = m_kind == YtDlp ? arg.contains(QLatin1String("FILE"))
-                                           : (arg == QLatin1String("filename") || arg == QLatin1String("file"));
-    const bool wantsDir = m_kind == YtDlp && (arg == QLatin1String("DIR") || arg.endsWith(QLatin1String("PATH")));
+    // Values the help limits to a fixed set (argparse "{a,b,c}").
+    if (!row.def.choices.isEmpty()) {
+        auto *choose = smallButton(tr("Scegli…"));
+        layout->addWidget(choose);
+        const OptionDef def = row.def;
+        connect(choose, &QPushButton::clicked, this, [this, value, def] {
+            QList<ListEntry> entries;
+            for (const QString &choice : def.choices)
+                entries.append(ListEntry{choice, {}, {}});
+            const QString chosen = pickFromList(this, def.label, entries);
+            if (chosen.isEmpty())
+                return;
+            if (def.multiValue && !value->text().isEmpty())
+                value->setText(value->text() + QLatin1Char(' ') + chosen);
+            else
+                value->setText(chosen);
+        });
+        return;
+    }
+
+    const bool wantsFile = m_kind != Ffmpeg ? arg.contains(QLatin1String("FILE"))
+                                            : (arg == QLatin1String("filename") || arg == QLatin1String("file"));
+    const bool wantsDir = m_kind != Ffmpeg && (arg == QLatin1String("DIR") || arg.endsWith(QLatin1String("PATH")));
     if (wantsFile || wantsDir) {
         auto *browse = smallButton(tr("Sfoglia…"));
         layout->addWidget(browse);
@@ -626,7 +753,9 @@ QStringList ToolTab::buildArguments() const
             if (!spec.isEmpty())
                 args.last() += QLatin1Char(':') + spec;
         }
-        if (row.value && (!row.value->text().isEmpty() || !row.def.valueOptional))
+        if (row.value && row.def.multiValue)
+            args += QProcess::splitCommand(row.value->text());
+        else if (row.value && (!row.value->text().isEmpty() || !row.def.valueOptional))
             args.append(row.value->text());
 
         OptionDef::Position position = row.def.position;
@@ -636,8 +765,23 @@ QStringList ToolTab::buildArguments() const
     }
     const QStringList extra = QProcess::splitCommand(m_extraEdit->text());
 
-    if (m_kind == YtDlp)
-        return global + extra + m_urlEdit->text().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    if (m_kind != Ffmpeg) {
+        // Quotes keep a search with spaces together: "titolo artista".
+        const QStringList targets = QProcess::splitCommand(m_urlEdit->text());
+        if (m_kind == Spotify) {
+            // The links come first: options taking several values would swallow them.
+            return QStringList{m_operationCombo->currentText()} + targets + global + extra;
+        }
+        if (m_kind == Instagram) {
+            QStringList profiles, posts;
+            instagramTargets(targets, profiles, posts);
+            QStringList result = profiles + global + extra;
+            if (!posts.isEmpty())
+                result << QStringLiteral("--") << posts;
+            return result;
+        }
+        return global + extra + targets;
+    }
 
     // ffmpeg [global] {[input options] -i input}... [output options] output
     QStringList result = global;

@@ -14,6 +14,8 @@ struct OptionDef {
     QString argName;            // name of the value, used as placeholder
     bool hasValue = false;      // show a value field
     bool valueOptional = false; // emit the option alone when the value is empty
+    bool multiValue = false;    // the value is a space-separated list of arguments
+    QStringList choices;        // allowed values, when the help lists them
     bool streamSpec = false;    // ffmpeg: accepts ":<stream_spec>"
     Position position = Global; // ffmpeg: where it goes on the command line
     bool defaultInput = false;  // ffmpeg: an Either option that normally applies to the input
@@ -34,6 +36,8 @@ struct ListEntry {
 
 QList<OptionSection> parseYtDlpHelp(const QString &text, QStringList *unparsed = nullptr);
 QList<OptionSection> parseFfmpegHelp(const QString &text, QStringList *unparsed = nullptr);
+// Help printed by Python's argparse (spotdl, instaloader).
+QList<OptionSection> parseArgparseHelp(const QString &text, QStringList *unparsed = nullptr);
 
 // nameColumn: index of the whitespace-separated column holding the name.
 // hasSeparator: entries start after a line made of dashes; otherwise skip headerLines.

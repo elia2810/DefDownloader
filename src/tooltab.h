@@ -21,7 +21,8 @@ class ToolTab : public QWidget
     Q_OBJECT
 
 public:
-    enum Kind { YtDlp, Ffmpeg };
+    // Spotify runs spotdl, Instagram runs instaloader, TikTok runs yt-dlp.
+    enum Kind { YtDlp, Ffmpeg, Spotify, Instagram, TikTok };
 
     explicit ToolTab(Kind kind, QWidget *parent = nullptr);
     ~ToolTab() override;
@@ -52,6 +53,7 @@ private:
     };
 
     void loadOptions();
+    bool applyHelp(const QString &help);
     void clearOptions();
     void showMessage(const QString &text, bool offerChooser);
     void buildOptionWidgets(const QList<OptionSection> &sections);
@@ -75,10 +77,12 @@ private:
 
     const Kind m_kind;
     const QString m_toolName;
+    QString m_dirKey; // settings key of the destination folder
     QString m_program;
 
-    QLineEdit *m_urlEdit = nullptr;    // yt-dlp
-    QLineEdit *m_dirEdit = nullptr;    // yt-dlp
+    QLineEdit *m_urlEdit = nullptr;    // every tool except ffmpeg
+    QLineEdit *m_dirEdit = nullptr;    // every tool except ffmpeg
+    QComboBox *m_operationCombo = nullptr; // spotdl: download, sync, save...
     QLineEdit *m_inputEdit = nullptr;  // ffmpeg
     QLineEdit *m_outputEdit = nullptr; // ffmpeg
     QLineEdit *m_filterEdit = nullptr;

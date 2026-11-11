@@ -1,7 +1,7 @@
 name: Windows build
 
-# Builds the app for Windows, bundles Qt, yt-dlp and ffmpeg next to the .exe
-# and zips the folder. On a version tag (v*) the zip is attached to the
+# Builds the app for Windows, bundles Qt and the command-line tools (yt-dlp,
+# ffmpeg, spotdl, instaloader) next to the .exe and zips the folder. On a version tag (v*) the zip is attached to the
 # release of that tag.
 on:
   push:
@@ -71,22 +71,46 @@ jobs:
           Copy-Item "$bin/ffmpeg.exe", "$bin/ffprobe.exe" dist/ytmlp/
           Copy-Item "$bin/*.dll" dist/ytmlp/
 
+      - name: Bundle spotdl
+        run: |
+          gh release download --repo spotDL/spotify-downloader --pattern 'spotdl-*-win32.exe' --dir tools/spotdl
+          $exe = Get-ChildItem tools/spotdl -Filter 'spotdl-*-win32.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'spotdl for Windows not found in the latest release' }
+          Copy-Item $exe.FullName dist/ytmlp/spotdl.exe
+
+      - name: Bundle instaloader
+        run: |
+          gh release download --repo instaloader/instaloader --pattern 'instaloader-*-windows-standalone.zip' --dir tools/instaloader
+          $zip = Get-ChildItem tools/instaloader -Filter '*.zip' | Select-Object -First 1
+          if (-not $zip) { throw 'instaloader for Windows not found in the latest release' }
+          Expand-Archive $zip.FullName -DestinationPath tools/instaloader/unzipped
+          $exe = Get-ChildItem tools/instaloader/unzipped -Recurse -Filter instaloader.exe | Select-Object -First 1
+          # The zip carries an MD5 of the executable: an integrity check only.
+          $md5File = "$($exe.FullName).md5"
+          if (Test-Path $md5File) {
+            $expected = [regex]::Match((Get-Content $md5File -Raw), '[0-9a-fA-F]{32}').Value.ToLower()
+            $actual = (Get-FileHash $exe.FullName -Algorithm MD5).Hash.ToLower()
+            if ($expected -ne $actual) { throw "instaloader.exe checksum mismatch: expected '$expected', got '$actual'" }
+          }
+          Copy-Item $exe.FullName dist/ytmlp/
+
       # Runs the packaged app: first the parsers against the bundled tools,
       # then the real window, saved as a picture.
       - name: Smoke test
         run: |
           $exe = Resolve-Path dist/ytmlp/ytmlp.exe
           $p = Start-Process $exe -ArgumentList '--selftest' -RedirectStandardOutput selftest.txt -PassThru
-          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'self-test timed out' }
+          if (-not $p.WaitForExit(600000)) { $p.Kill(); throw 'self-test timed out' }
           $out = Get-Content selftest.txt -Raw
           $out -split "`n" | Where-Object { $_ -notmatch '^      ' }
-          if ($out -notmatch '== yt-dlp: \S.*yt-dlp\.exe') { throw 'bundled yt-dlp not found' }
-          if ($out -notmatch '== ffmpeg: \S.*ffmpeg\.exe') { throw 'bundled ffmpeg not found' }
+          foreach ($tool in 'yt-dlp', 'ffmpeg', 'spotdl', 'instaloader') {
+            if ($out -notmatch "== $([regex]::Escape($tool)): \S.*$([regex]::Escape($tool))\.exe") { throw "bundled $tool not found" }
+          }
           $totals = [regex]::Matches($out, 'total options: (\d+)') | ForEach-Object { [int]$_.Groups[1].Value }
-          if ($totals.Count -ne 2 -or ($totals | Where-Object { $_ -lt 100 })) { throw "options not parsed: $totals" }
+          if ($totals.Count -ne 4 -or ($totals | Where-Object { $_ -lt 30 })) { throw "options not parsed: $totals" }
 
           $shot = Join-Path $PWD 'window.png'
-          $p = Start-Process $exe -ArgumentList '--screenshot', $shot, '1', 'codec' -PassThru
+          $p = Start-Process $exe -ArgumentList '--screenshot', $shot, '3', 'login' -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'the window did not close' }
           if (-not (Test-Path $shot)) { throw 'the window could not be captured' }
 

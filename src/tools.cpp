@@ -155,6 +155,112 @@ QList<OptionSection> parseFfmpegHelp(const QString &text, QStringList *unparsed)
     return sections;
 }
 
+// argparse layout:
+//   "Section title:"                              column 0
+//   "  -o, --output OUTPUT   Description"          two spaces, starts with '-'
+//   "  --format {mp3,flac}"                        choices in braces
+//   "  --audio [{a,b} ...]"                        brackets: optional, "...": several values
+//   "                        continuation"         deeper indent
+// Lines with two spaces that do not start with '-' are positional arguments
+// or free text, and are skipped together with their continuation lines.
+QList<OptionSection> parseArgparseHelp(const QString &text, QStringList *unparsed)
+{
+    static const QRegularExpression optionRe(QStringLiteral("^  (-\\S.*?)(?:\\s{2,}(\\S.*))?$"));
+    static const QRegularExpression partRe(QStringLiteral("^(-{1,2}\\w[\\w-]*)(?:\\s+(.+))?$"));
+
+    QList<OptionSection> sections;
+    bool inOption = false;
+
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (QString line : lines) {
+        while (line.endsWith(QLatin1Char('\r')) || line.endsWith(QLatin1Char(' ')))
+            line.chop(1);
+        if (line.isEmpty()) {
+            inOption = false;
+            continue;
+        }
+        if (!line.startsWith(QLatin1Char(' '))) {
+            inOption = false;
+            if (line.endsWith(QLatin1Char(':')) && !line.startsWith(QLatin1String("usage"))) {
+                line.chop(1);
+                line[0] = line.at(0).toUpper();
+                sections.append(OptionSection{line, {}});
+            }
+            continue;
+        }
+        if (sections.isEmpty())
+            continue; // usage block
+
+        if (line.startsWith(QLatin1String("  -"))) {
+            inOption = false;
+            const auto m = optionRe.match(line);
+            QStringList names;
+            QString metavar;
+            bool valid = m.hasMatch();
+            if (valid) {
+                // "-o OUTPUT, --output OUTPUT": every name may repeat the value name.
+                for (const QString &part : m.captured(1).split(QStringLiteral(", "))) {
+                    const auto pm = partRe.match(part);
+                    if (!pm.hasMatch()) {
+                        valid = false;
+                        break;
+                    }
+                    names.append(pm.captured(1));
+                    if (!pm.captured(2).isEmpty())
+                        metavar = pm.captured(2);
+                }
+            }
+            if (!valid) {
+                if (unparsed)
+                    unparsed->append(line);
+                continue;
+            }
+
+            OptionDef def;
+            def.label = names.join(QStringLiteral(", "));
+            def.args = {names.first()};
+            for (const QString &name : std::as_const(names)) {
+                if (name.startsWith(QLatin1String("--"))) {
+                    def.args = {name};
+                    break;
+                }
+            }
+            if (!metavar.isEmpty()) {
+                def.hasValue = true;
+                if (metavar.startsWith(QLatin1Char('[')) && metavar.endsWith(QLatin1Char(']'))) {
+                    def.valueOptional = true;
+                    metavar = metavar.mid(1, metavar.size() - 2);
+                }
+                if (metavar.endsWith(QLatin1String(" ..."))) {
+                    def.multiValue = true;
+                    metavar.chop(4);
+                }
+                if (metavar.startsWith(QLatin1Char('{')) && metavar.endsWith(QLatin1Char('}'))) {
+                    def.choices = metavar.mid(1, metavar.size() - 2).split(QLatin1Char(','));
+                    metavar = def.choices.join(QStringLiteral(" | "));
+                }
+                def.argName = metavar;
+            }
+            def.description = m.captured(2);
+            sections.last().options.append(def);
+            inOption = true;
+            continue;
+        }
+
+        if (inOption && line.startsWith(QLatin1String("      "))) {
+            QString &desc = sections.last().options.last().description;
+            if (!desc.isEmpty())
+                desc += QLatin1Char(' ');
+            desc += line.trimmed();
+            continue;
+        }
+        inOption = false;
+    }
+
+    sections.removeIf([](const OptionSection &s) { return s.options.isEmpty(); });
+    return sections;
+}
+
 QList<ListEntry> parseFfmpegList(const QString &text, int nameColumn, bool hasSeparator,
                                  int headerLines, int flagWidth)
 {
@@ -231,7 +337,8 @@ QProcessEnvironment toolEnvironment()
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     // Same order as findTool(), so yt-dlp picks the ffmpeg that the ffmpeg tab uses.
     QStringList path;
-    for (const QString &tool : {QStringLiteral("ffmpeg"), QStringLiteral("yt-dlp")}) {
+    for (const QString &tool : {QStringLiteral("ffmpeg"), QStringLiteral("yt-dlp"), QStringLiteral("spotdl"),
+                                QStringLiteral("instaloader")}) {
         const QString saved = QSettings().value(QStringLiteral("paths/") + tool).toString();
         if (!saved.isEmpty())
             path.append(QFileInfo(saved).absolutePath());

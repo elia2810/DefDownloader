@@ -30,19 +30,21 @@ printf '[Paths]\nPlugins = PlugIns\n' > "$APP/Contents/Resources/qt.conf"
 
 # Tools shipped inside the app, used when the Mac has none installed.
 # ffmpeg and ffprobe are the Homebrew ones (macdeployqt bundles their
-# libraries like Qt's); yt-dlp is the official standalone build, see
-# fetch-yt-dlp-mac.sh.
+# libraries like Qt's); yt-dlp, spotdl and instaloader are standalone
+# executables prepared by fetch-tools-mac.sh.
 BIN="$APP/Contents/MacOS"
 for tool in ffmpeg ffprobe; do
     cp "$(brew --prefix ffmpeg)/bin/$tool" "$BIN/$tool"
     chmod u+w "$BIN/$tool"
 done
-if [ -f vendor/mac/yt-dlp ]; then
-    cp vendor/mac/yt-dlp "$BIN/yt-dlp"
-    chmod u+wx "$BIN/yt-dlp"
-else
-    echo "warning: vendor/mac/yt-dlp missing, yt-dlp is not bundled (run ./fetch-yt-dlp-mac.sh)" >&2
-fi
+for tool in yt-dlp spotdl instaloader; do
+    if [ -f "vendor/mac/$tool" ]; then
+        cp "vendor/mac/$tool" "$BIN/$tool"
+        chmod u+wx "$BIN/$tool"
+    else
+        echo "warning: vendor/mac/$tool missing, $tool is not bundled (run ./fetch-tools-mac.sh)" >&2
+    fi
+done
 
 "$QT_PREFIX/bin/macdeployqt" "$APP" -no-plugins -no-codesign \
     -executable="$APP/Contents/PlugIns/platforms/libqcocoa.dylib" \
@@ -63,7 +65,7 @@ for lib in "$APP"/Contents/Frameworks/*.dylib; do
 done
 
 # Nothing in the bundle may still point at the local Homebrew install.
-if find "$APP" -type f \( -name '*.dylib' -o -perm -u+x \) ! -name yt-dlp -exec otool -L {} + 2>/dev/null \
+if find "$APP" -type f \( -name '*.dylib' -o -perm -u+x \) ! -name yt-dlp ! -name spotdl ! -name instaloader -exec otool -L {} + 2>/dev/null \
         | grep -E '^\s+(/opt/homebrew|/usr/local|@rpath)'; then
     echo "error: the bundle still depends on libraries outside of it" >&2
     exit 1

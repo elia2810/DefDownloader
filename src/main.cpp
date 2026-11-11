@@ -11,18 +11,20 @@
 static int selfTest()
 {
     QTextStream out(stdout);
-    for (const QString &tool : {QStringLiteral("yt-dlp"), QStringLiteral("ffmpeg")}) {
+    for (const QString &tool : {QStringLiteral("yt-dlp"), QStringLiteral("ffmpeg"), QStringLiteral("spotdl"),
+                                QStringLiteral("instaloader")}) {
         const QString program = findTool(tool);
         out << "== " << tool << ": " << (program.isEmpty() ? QStringLiteral("NOT FOUND") : program) << "\n";
         if (program.isEmpty())
             continue;
-        const bool isYtDlp = tool == QLatin1String("yt-dlp");
-        const QString help = runTool(program, isYtDlp ? QStringList{QStringLiteral("--help")}
-                                                      : QStringList{QStringLiteral("-hide_banner"),
-                                                                    QStringLiteral("-h"), QStringLiteral("long")});
+        const bool isFfmpeg = tool == QLatin1String("ffmpeg");
+        const QString help = runTool(program, isFfmpeg ? QStringList{QStringLiteral("-hide_banner"),
+                                                                     QStringLiteral("-h"), QStringLiteral("long")}
+                                                       : QStringList{QStringLiteral("--help")}, 60000);
         QStringList unparsed;
-        const QList<OptionSection> sections = isYtDlp ? parseYtDlpHelp(help, &unparsed)
-                                                      : parseFfmpegHelp(help, &unparsed);
+        const QList<OptionSection> sections = isFfmpeg ? parseFfmpegHelp(help, &unparsed)
+                                              : tool == QLatin1String("yt-dlp") ? parseYtDlpHelp(help, &unparsed)
+                                              : parseArgparseHelp(help, &unparsed);
         int total = 0;
         for (const OptionSection &section : sections) {
             out << "  " << section.title << ": " << section.options.size() << "\n";
@@ -32,7 +34,7 @@ static int selfTest()
                 if (def.streamSpec)
                     out << " [spec]";
                 if (def.hasValue)
-                    out << " <" << def.argName << ">";
+                    out << " <" << def.argName << ">" << (def.valueOptional ? "?" : "") << (def.multiValue ? "*" : "");
                 out << "  | " << def.description.left(50) << "\n";
             }
         }
@@ -40,7 +42,7 @@ static int selfTest()
         for (const QString &line : std::as_const(unparsed))
             out << "  UNPARSED: " << line << "\n";
 
-        if (!isYtDlp) {
+        if (isFfmpeg) {
             const auto count = [&](const QString &arg, int column, bool separator, int header, int flagWidth) {
                 const auto list = parseFfmpegList(runTool(program, {QStringLiteral("-hide_banner"), arg}),
                                                   column, separator, header, flagWidth);
@@ -78,10 +80,14 @@ int main(int argc, char *argv[])
 
     QTabWidget window;
     window.setWindowTitle(QStringLiteral("ytmlp"));
-    auto *ytDlp = new ToolTab(ToolTab::YtDlp);
-    auto *ffmpeg = new ToolTab(ToolTab::Ffmpeg);
-    window.addTab(ytDlp, QStringLiteral("yt-dlp"));
-    window.addTab(ffmpeg, QStringLiteral("ffmpeg"));
+    const QList<ToolTab *> tabs = {
+        new ToolTab(ToolTab::YtDlp),   new ToolTab(ToolTab::Ffmpeg), new ToolTab(ToolTab::Spotify),
+        new ToolTab(ToolTab::Instagram), new ToolTab(ToolTab::TikTok),
+    };
+    const QStringList titles = {QStringLiteral("yt-dlp"), QStringLiteral("ffmpeg"), QStringLiteral("Spotify"),
+                                QStringLiteral("Instagram"), QStringLiteral("TikTok")};
+    for (int i = 0; i < tabs.size(); ++i)
+        window.addTab(tabs.at(i), titles.at(i));
     window.resize(980, 780);
     window.show();
 
@@ -92,9 +98,9 @@ int main(int argc, char *argv[])
         const QString file = args.at(shot + 1);
         const int tab = args.value(shot + 2).toInt();
         const QString filter = args.value(shot + 3);
-        QTimer::singleShot(4000, &window, [&window, ytDlp, ffmpeg, file, tab, filter] {
+        QTimer::singleShot(12000, &window, [&window, tabs, file, tab, filter] {
             window.setCurrentIndex(tab);
-            (tab == 0 ? ytDlp : ffmpeg)->setFilter(filter);
+            tabs.value(tab, tabs.first())->setFilter(filter);
             QTimer::singleShot(500, &window, [&window, file] {
                 window.grab().save(file);
                 QCoreApplication::quit();
