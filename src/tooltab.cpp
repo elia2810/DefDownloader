@@ -135,42 +135,6 @@ QPushButton *smallButton(const QString &text)
     return button;
 }
 
-// instaloader takes profile names and post shortcodes, not links: pasted
-// Instagram URLs are translated. Posts go after "--" as "-SHORTCODE".
-void instagramTargets(const QStringList &inputs, QStringList &profiles, QStringList &posts)
-{
-    static const QRegularExpression urlRe(QStringLiteral("^(?:https?://)?(?:www\\.)?instagram\\.com/([^?#]*)"),
-                                          QRegularExpression::CaseInsensitiveOption);
-    static const QStringList postKinds = {QStringLiteral("p"), QStringLiteral("reel"), QStringLiteral("reels"),
-                                          QStringLiteral("tv")};
-    for (const QString &input : inputs) {
-        const auto match = urlRe.match(input);
-        if (!match.hasMatch()) {
-            profiles << input;
-            continue;
-        }
-        const QStringList path = match.captured(1).split(QLatin1Char('/'), Qt::SkipEmptyParts);
-        if (path.isEmpty())
-            continue;
-        if (postKinds.contains(path.at(0)) && path.size() >= 2)
-            posts << QLatin1Char('-') + path.at(1);
-        else if (path.size() >= 3 && postKinds.contains(path.at(1))) // instagram.com/user/p/CODE
-            posts << QLatin1Char('-') + path.at(2);
-        else if (path.at(0) == QLatin1String("stories") && path.size() >= 2)
-            profiles << path.at(1);
-        else if (path.at(0) == QLatin1String("explore") && path.size() >= 3 && path.at(1) == QLatin1String("tags"))
-            profiles << QLatin1Char('#') + path.at(2);
-        else
-            profiles << path.at(0);
-    }
-}
-
-QString downloadsDir()
-{
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
-    return dir.isEmpty() ? QDir::homePath() : dir;
-}
-
 } // namespace
 
 ToolTab::ToolTab(Kind kind, QWidget *parent)

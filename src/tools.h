@@ -52,4 +52,16 @@ QProcessEnvironment toolEnvironment();
 // Runs a tool and returns its merged output (used for the short list queries).
 QString runTool(const QString &program, const QStringList &args, int timeoutMs = 15000);
 
+// Asks a running tool to stop, and forces it after a few seconds.
+void stopTool(class QProcess *process);
+// Stops a tool whose owner is going away; the process object deletes itself.
+void abandonTool(class QProcess *process);
+
+// instaloader takes profile names and post shortcodes, not links: Instagram
+// URLs are translated. Posts come out as "-SHORTCODE" (to be passed after "--").
+void instagramTargets(const QStringList &inputs, QStringList &profiles, QStringList &posts);
+
+// The user's Downloads folder.
+QString downloadsDir();
+
 QString shellQuote(const QString &arg);

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(DefDownloader VERSION 0.3.0 LANGUAGES CXX)
+project(DefDownloader VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,10 @@ qt_add_executable(DefDownloader WIN32 MACOSX_BUNDLE
     src/tools.cpp
     src/tooltab.h
     src/tooltab.cpp
+    src/simple.h
+    src/simple.cpp
+    src/widgets.h
+    src/widgets.cpp
 )
 
 if(WIN32)

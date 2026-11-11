@@ -2,7 +2,22 @@
 
 # DefDownloader
 
-Un'interfaccia grafica per scaricare e convertire: una sola finestra con una tab per strumento, in cui ogni opzione da riga di comando diventa una spunta o un campo.
+Un'interfaccia grafica per scaricare e convertire. Si apre su una schermata semplice: scegli il sito, incolli i link, scegli formato e qualità e scarichi. L'interruttore **Avanzata** in alto a destra mostra invece tutte le opzioni dei programmi a riga di comando che l'app usa.
+
+![La schermata semplice: una lista di link con avanzamento e velocità](docs/semplice.png)
+
+## Schermata semplice
+
+- **Sito**: YouTube, Spotify, Instagram o TikTok. Incollando un link il sito viene riconosciuto da solo; i link di altri siti passano da yt-dlp.
+- **Link**: un link incollato diventa subito una riga della lista; una playlist (o un album di Spotify) aggiunge una riga per ogni elemento.
+- **Video e Audio**: le due spunte decidono cosa scaricare; per ciascuno si scelgono il formato e, con il cursore, la qualità (risoluzione del video, bitrate dell'audio). Le scelte valgono per i link aggiunti dopo: ogni riga conserva quelle con cui è stata aggiunta.
+- **Lista**: ogni riga ha il proprio menu "Video + audio / Solo video / Solo audio", il pulsante per scaricarla o fermarla, la barra di avanzamento con la velocità e il cestino per toglierla. "Scarica tutti" avvia tutta la lista, tre elementi alla volta.
+
+Per Spotify e per i profili Instagram la barra indica solo che il download è in corso: spotDL e instaloader non comunicano la percentuale.
+
+## Modalità avanzata
+
+Una tab per strumento, in cui ogni opzione da riga di comando diventa una spunta o un campo.
 
 | Tab | Strumento | Cosa fa |
 | --- | --- | --- |
@@ -12,7 +27,7 @@ Un'interfaccia grafica per scaricare e convertire: una sola finestra con una tab
 | Instagram | [instaloader](https://instaloader.github.io) | Foto, video, storie e profili interi |
 | TikTok | yt-dlp | Video di TikTok |
 
-Le opzioni non sono scritte a mano: all'avvio l'app legge l'help dei programmi e costruisce l'interfaccia da lì. Così ci sono tutte, e restano allineate alla versione installata.
+Le opzioni non sono scritte a mano: l'app legge l'help dei programmi e costruisce l'interfaccia da lì. Così ci sono tutte, e restano allineate alla versione installata.
 
 ![La tab yt-dlp: estrazione dell'audio in mp3](docs/yt-dlp.png)
 
@@ -36,7 +51,7 @@ Le app non sono firmate da uno sviluppatore registrato, quindi al primo avvio il
 - **macOS**: Impostazioni → Privacy e sicurezza → "Apri comunque"
 - **Windows**: "Ulteriori informazioni" → "Esegui comunque"
 
-## Come si usa
+## Come si usa la modalità avanzata
 
 - **Tab yt-dlp**: incolla uno o più URL, scegli la cartella di destinazione, attiva le opzioni che ti servono.
 - **Tab ffmpeg**: scegli i file di input e di output. Codec, formati, pixel format e filtri si scelgono da un elenco con "Scegli…"; le opzioni valide sia per l'input sia per l'output hanno un selettore.

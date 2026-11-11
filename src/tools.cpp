@@ -8,6 +8,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTimer>
 
 // yt-dlp --help layout:
 //   "  Section Name:"                           two spaces
@@ -332,6 +333,36 @@ QString findTool(const QString &name)
     return QStandardPaths::findExecutable(name, extraToolDirs());
 }
 
+// instaloader takes profile names and post shortcodes, not links: pasted
+// Instagram URLs are translated. Posts go after "--" as "-SHORTCODE".
+void instagramTargets(const QStringList &inputs, QStringList &profiles, QStringList &posts)
+{
+    static const QRegularExpression urlRe(QStringLiteral("^(?:https?://)?(?:www\\.)?instagram\\.com/([^?#]*)"),
+                                          QRegularExpression::CaseInsensitiveOption);
+    static const QStringList postKinds = {QStringLiteral("p"), QStringLiteral("reel"), QStringLiteral("reels"),
+                                          QStringLiteral("tv")};
+    for (const QString &input : inputs) {
+        const auto match = urlRe.match(input);
+        if (!match.hasMatch()) {
+            profiles << input;
+            continue;
+        }
+        const QStringList path = match.captured(1).split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        if (path.isEmpty())
+            continue;
+        if (postKinds.contains(path.at(0)) && path.size() >= 2)
+            posts << QLatin1Char('-') + path.at(1);
+        else if (path.size() >= 3 && postKinds.contains(path.at(1))) // instagram.com/user/p/CODE
+            posts << QLatin1Char('-') + path.at(2);
+        else if (path.at(0) == QLatin1String("stories") && path.size() >= 2)
+            profiles << path.at(1);
+        else if (path.at(0) == QLatin1String("explore") && path.size() >= 3 && path.at(1) == QLatin1String("tags"))
+            profiles << QLatin1Char('#') + path.at(2);
+        else
+            profiles << path.at(0);
+    }
+}
+
 QProcessEnvironment toolEnvironment()
 {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -364,6 +395,12 @@ QString runTool(const QString &program, const QStringList &args, int timeoutMs)
     return QString::fromUtf8(process.readAll());
 }
 
+QString downloadsDir()
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    return dir.isEmpty() ? QDir::homePath() : dir;
+}
+
 QString shellQuote(const QString &arg)
 {
     static const QRegularExpression safe(QStringLiteral("^[A-Za-z0-9_@%+=:,./-]+$"));
@@ -374,4 +411,42 @@ QString shellQuote(const QString &arg)
     QString quoted = arg;
     quoted.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
     return QLatin1Char('\'') + quoted + QLatin1Char('\'');
+}
+
+void stopTool(QProcess *process)
+{
+    if (!process || process->state() == QProcess::NotRunning)
+        return;
+#ifdef Q_OS_WIN
+    // Console programs ignore the close message, and ending only the process
+    // would leave its children running (ffmpeg, the Python unpacked by the
+    // standalone builds): the whole tree is ended.
+    QProcess killer;
+    killer.setProgram(QStringLiteral("taskkill"));
+    killer.setArguments({QStringLiteral("/PID"), QString::number(process->processId()), QStringLiteral("/T"),
+                         QStringLiteral("/F")});
+    killer.setCreateProcessArgumentsModifier(
+        [](QProcess::CreateProcessArguments *args) { args->flags |= 0x08000000; }); // CREATE_NO_WINDOW
+    killer.startDetached();
+#else
+    // The standalone builds forward the signal to the Python they unpack.
+    process->terminate();
+    QTimer::singleShot(3000, process, [process] {
+        if (process->state() != QProcess::NotRunning)
+            process->kill();
+    });
+#endif
+}
+
+void abandonTool(QProcess *process)
+{
+    if (!process)
+        return;
+    process->disconnect();
+    process->setParent(QCoreApplication::instance());
+    QObject::connect(process, &QProcess::finished, process, &QObject::deleteLater);
+    if (process->state() == QProcess::NotRunning)
+        process->deleteLater();
+    else
+        stopTool(process);
 }
