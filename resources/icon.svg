@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- ytmlp app icon: a play triangle with a download badge. 1024x1024, macOS icon grid. -->
+<!-- DefDownloader app icon: a play triangle with a download badge. 1024x1024, macOS icon grid. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
     <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="200" y1="100" x2="824" y2="924">

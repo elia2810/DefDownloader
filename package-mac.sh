@@ -1,12 +1,12 @@
 #!/bin/sh
-# Builds ytmlp and produces a self-contained dist/ytmlp.app and dist/ytmlp-macos-arm64.dmg
+# Builds DefDownloader and produces a self-contained dist/DefDownloader.app and dist/DefDownloader-macos-arm64.dmg
 # that run on Macs without Qt installed.
 set -eu
 cd "$(dirname "$0")"
 
 QT_PREFIX="${QT_PREFIX:-$(brew --prefix qt)}"
 QT_PLUGINS="$("$QT_PREFIX/bin/qtpaths" --query QT_INSTALL_PLUGINS)"
-APP=dist/ytmlp.app
+APP=dist/DefDownloader.app
 
 # Same deployment target as Qt, so the app itself never raises the minimum
 # macOS version (the bundled Homebrew libraries decide it).
@@ -17,7 +17,7 @@ cmake --build build
 # Work on a copy: macdeployqt rewrites the bundle, the build tree stays usable.
 rm -rf dist
 mkdir dist
-cp -R build/ytmlp.app "$APP"
+cp -R build/DefDownloader.app "$APP"
 
 # Homebrew ships Qt as separate formulae, so macdeployqt cannot resolve the
 # optional plugins (svg, pdf, virtual keyboard). A Widgets app only needs the
@@ -80,7 +80,7 @@ codesign --verify --deep --strict "$APP"
 STAGE="$(mktemp -d)"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname ytmlp -srcfolder "$STAGE" -ov -format UDZO dist/ytmlp-macos-arm64.dmg >/dev/null
+hdiutil create -volname DefDownloader -srcfolder "$STAGE" -ov -format UDZO dist/DefDownloader-macos-arm64.dmg >/dev/null
 rm -rf "$STAGE"
 
-echo "Created $APP and dist/ytmlp-macos-arm64.dmg"
+echo "Created $APP and dist/DefDownloader-macos-arm64.dmg"

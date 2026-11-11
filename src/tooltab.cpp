@@ -612,7 +612,8 @@ void ToolTab::addValueHelpers(Row &row, QHBoxLayout *layout)
         return;
     }
 
-    const bool wantsFile = m_kind != Ffmpeg ? arg.contains(QLatin1String("FILE"))
+    // "COOKIE_FILE" or "SESSIONFILE" name a file; "FILENAME_PATTERN" does not.
+    const bool wantsFile = m_kind != Ffmpeg ? arg.contains(QLatin1String("FILE")) && !arg.contains(QLatin1String("FILENAME"))
                                             : (arg == QLatin1String("filename") || arg == QLatin1String("file"));
     const bool wantsDir = m_kind != Ffmpeg && (arg == QLatin1String("DIR") || arg.endsWith(QLatin1String("PATH")));
     if (wantsFile || wantsDir) {

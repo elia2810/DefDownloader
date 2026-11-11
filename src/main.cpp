@@ -6,7 +6,7 @@
 #include <QTextStream>
 #include <QTimer>
 
-// `ytmlp --selftest`: parses the help of the installed tools and prints what
+// `DefDownloader --selftest`: parses the help of the installed tools and prints what
 // was understood, without opening a window.
 static int selfTest()
 {
@@ -66,8 +66,8 @@ static int selfTest()
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication::setOrganizationName(QStringLiteral("ytmlp"));
-    QCoreApplication::setApplicationName(QStringLiteral("ytmlp"));
+    QCoreApplication::setOrganizationName(QStringLiteral("DefDownloader"));
+    QCoreApplication::setApplicationName(QStringLiteral("DefDownloader"));
 
     for (int i = 1; i < argc; ++i) {
         if (qstrcmp(argv[i], "--selftest") == 0) {
@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     QTabWidget window;
-    window.setWindowTitle(QStringLiteral("ytmlp"));
+    window.setWindowTitle(QStringLiteral("DefDownloader"));
     const QList<ToolTab *> tabs = {
         new ToolTab(ToolTab::YtDlp),   new ToolTab(ToolTab::Ffmpeg), new ToolTab(ToolTab::Spotify),
         new ToolTab(ToolTab::Instagram), new ToolTab(ToolTab::TikTok),
@@ -91,7 +91,7 @@ int main(int argc, char *argv[])
     window.resize(980, 780);
     window.show();
 
-    // `ytmlp --screenshot out.png [tab] [filter]`: saves a picture of the window and quits.
+    // `DefDownloader --screenshot out.png [tab] [filter]`: saves a picture of the window and quits.
     const QStringList args = app.arguments();
     const qsizetype shot = args.indexOf(QStringLiteral("--screenshot"));
     if (shot >= 0 && shot + 1 < args.size()) {

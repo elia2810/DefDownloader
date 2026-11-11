@@ -38,14 +38,14 @@ jobs:
 
       - name: Bundle Qt
         run: |
-          New-Item -ItemType Directory -Force dist/ytmlp | Out-Null
-          Copy-Item build/Release/ytmlp.exe dist/ytmlp/
+          New-Item -ItemType Directory -Force dist/DefDownloader | Out-Null
+          Copy-Item build/Release/DefDownloader.exe dist/DefDownloader/
           windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw `
-            --no-compiler-runtime dist/ytmlp/ytmlp.exe
+            --no-compiler-runtime dist/DefDownloader/DefDownloader.exe
           # Visual C++ runtime next to the app, for PCs that do not have it installed.
           foreach ($dll in 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll') {
             $path = Join-Path $env:SystemRoot "System32\$dll"
-            if (Test-Path $path) { Copy-Item $path dist/ytmlp/ }
+            if (Test-Path $path) { Copy-Item $path dist/DefDownloader/ }
           }
 
       # The app looks for the tools in its own folder when none are installed.
@@ -56,7 +56,7 @@ jobs:
           $expected = ($line.Line -split '\s+')[0]
           $actual = (Get-FileHash tools/yt-dlp.exe -Algorithm SHA256).Hash.ToLower()
           if (-not $expected -or $expected -ne $actual) { throw "yt-dlp.exe checksum mismatch: expected '$expected', got '$actual'" }
-          Copy-Item tools/yt-dlp.exe dist/ytmlp/
+          Copy-Item tools/yt-dlp.exe dist/DefDownloader/
 
       - name: Bundle ffmpeg
         run: |
@@ -68,15 +68,15 @@ jobs:
           if (-not $expected -or $expected -ne $actual) { throw "$zip checksum mismatch: expected '$expected', got '$actual'" }
           Expand-Archive "tools/$zip" -DestinationPath tools/ffmpeg
           $bin = (Get-ChildItem tools/ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
-          Copy-Item "$bin/ffmpeg.exe", "$bin/ffprobe.exe" dist/ytmlp/
-          Copy-Item "$bin/*.dll" dist/ytmlp/
+          Copy-Item "$bin/ffmpeg.exe", "$bin/ffprobe.exe" dist/DefDownloader/
+          Copy-Item "$bin/*.dll" dist/DefDownloader/
 
       - name: Bundle spotdl
         run: |
           gh release download --repo spotDL/spotify-downloader --pattern 'spotdl-*-win32.exe' --dir tools/spotdl
           $exe = Get-ChildItem tools/spotdl -Filter 'spotdl-*-win32.exe' | Select-Object -First 1
           if (-not $exe) { throw 'spotdl for Windows not found in the latest release' }
-          Copy-Item $exe.FullName dist/ytmlp/spotdl.exe
+          Copy-Item $exe.FullName dist/DefDownloader/spotdl.exe
 
       - name: Bundle instaloader
         run: |
@@ -92,13 +92,13 @@ jobs:
             $actual = (Get-FileHash $exe.FullName -Algorithm MD5).Hash.ToLower()
             if ($expected -ne $actual) { throw "instaloader.exe checksum mismatch: expected '$expected', got '$actual'" }
           }
-          Copy-Item $exe.FullName dist/ytmlp/
+          Copy-Item $exe.FullName dist/DefDownloader/
 
       # Runs the packaged app: first the parsers against the bundled tools,
       # then the real window, saved as a picture.
       - name: Smoke test
         run: |
-          $exe = Resolve-Path dist/ytmlp/ytmlp.exe
+          $exe = Resolve-Path dist/DefDownloader/DefDownloader.exe
           $p = Start-Process $exe -ArgumentList '--selftest' -RedirectStandardOutput selftest.txt -PassThru
           if (-not $p.WaitForExit(600000)) { $p.Kill(); throw 'self-test timed out' }
           $out = Get-Content selftest.txt -Raw
@@ -115,13 +115,13 @@ jobs:
           if (-not (Test-Path $shot)) { throw 'the window could not be captured' }
 
       - name: Zip
-        run: Compress-Archive -Path dist/ytmlp -DestinationPath ytmlp-windows-x64.zip
+        run: Compress-Archive -Path dist/DefDownloader -DestinationPath DefDownloader-windows-x64.zip
 
       - uses: actions/upload-artifact@v7
         with:
-          name: ytmlp-windows-x64
+          name: DefDownloader-windows-x64
           path: |
-            ytmlp-windows-x64.zip
+            DefDownloader-windows-x64.zip
             window.png
             selftest.txt
 
@@ -131,4 +131,4 @@ jobs:
           $tag = '${{ github.ref_name }}'
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) { gh release create $tag --title $tag --notes '' --verify-tag }
-          gh release upload $tag ytmlp-windows-x64.zip --clobber
+          gh release upload $tag DefDownloader-windows-x64.zip --clobber

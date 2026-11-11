@@ -12,16 +12,22 @@ Un'interfaccia grafica per scaricare e convertire: una sola finestra con una tab
 | Instagram | [instaloader](https://instaloader.github.io) | Foto, video, storie e profili interi |
 | TikTok | yt-dlp | Video di TikTok |
 
-Le opzioni non sono scritte a mano: all'avvio l'app (che si chiama `ytmlp`) legge l'help dei programmi e costruisce l'interfaccia da lì. Così ci sono tutte, e restano allineate alla versione installata.
+Le opzioni non sono scritte a mano: all'avvio l'app legge l'help dei programmi e costruisce l'interfaccia da lì. Così ci sono tutte, e restano allineate alla versione installata.
 
-![La tab ffmpeg con la ricerca "codec"](docs/screenshot.png)
+![La tab yt-dlp: estrazione dell'audio in mp3](docs/yt-dlp.png)
+
+| ffmpeg | Spotify | Instagram |
+| --- | --- | --- |
+| ![La tab ffmpeg](docs/ffmpeg.png) | ![La tab Spotify](docs/spotify.png) | ![La tab Instagram](docs/instagram.png) |
 
 ## Download
 
-| Sistema | File |
-| --- | --- |
-| macOS (Apple Silicon, macOS 27 o successivo) | [ytmlp-macos-arm64.dmg](https://github.com/elia2810/DefDownloader/releases/latest/download/ytmlp-macos-arm64.dmg) |
-| Windows (64 bit) | [ytmlp-windows-x64.zip](https://github.com/elia2810/DefDownloader/releases/latest/download/ytmlp-windows-x64.zip) |
+Scarica l'ultima versione dalla [pagina delle release](https://github.com/elia2810/DefDownloader/releases/latest):
+
+| Sistema | File | Come si installa |
+| --- | --- | --- |
+| macOS (Apple Silicon, macOS 27 o successivo) | `DefDownloader-macos-arm64.dmg` | Apri il dmg e trascina l'app in Applicazioni |
+| Windows (64 bit) | `DefDownloader-windows-x64.zip` | Estrai la cartella e avvia `DefDownloader.exe` |
 
 Entrambi includono già tutti gli strumenti (yt-dlp, ffmpeg, ffprobe, spotDL, instaloader). Se sul computer sono già installati, l'app usa quelli.
 
@@ -52,7 +58,7 @@ brew install qt cmake ninja yt-dlp ffmpeg
 ./fetch-tools-mac.sh   # spotDL e instaloader, in vendor/mac
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
 cmake --build build
-PATH="$PWD/vendor/mac:$PATH" build/ytmlp.app/Contents/MacOS/ytmlp
+PATH="$PWD/vendor/mac:$PATH" build/DefDownloader.app/Contents/MacOS/DefDownloader
 ```
 
 Per creare il `.dmg` da distribuire, con Qt e gli strumenti inclusi:
