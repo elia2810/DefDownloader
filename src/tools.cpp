@@ -413,6 +413,41 @@ QString shellQuote(const QString &arg)
     return QLatin1Char('\'') + quoted + QLatin1Char('\'');
 }
 
+// The page of the latest release redirects to ".../releases/tag/v1.2.3": the
+// address it points to is all that is read. curl comes with macOS and with
+// Windows 10 and later, so the app needs no network library of its own.
+void fetchLatestVersion(QObject *context, std::function<void(const QString &)> done)
+{
+    const QString curl = QStandardPaths::findExecutable(QStringLiteral("curl"));
+    if (curl.isEmpty())
+        return;
+    auto *process = new QProcess(context);
+    QObject::connect(process, &QProcess::finished, context, [process, done] {
+        static const QRegularExpression tag(QStringLiteral("location:\\s*\\S*/releases/tag/v?(\\d+(?:\\.\\d+)+)"),
+                                            QRegularExpression::CaseInsensitiveOption);
+        const auto match = tag.match(QString::fromUtf8(process->readAllStandardOutput()));
+        process->deleteLater();
+        if (match.hasMatch())
+            done(match.captured(1));
+    });
+    QObject::connect(process, &QProcess::errorOccurred, process, [process](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            process->deleteLater();
+    });
+    process->start(curl, {QStringLiteral("--silent"), QStringLiteral("--head"), QStringLiteral("--max-time"),
+                          QStringLiteral("10"), kReleasesUrl});
+    process->closeWriteChannel();
+}
+
+QString formatDuration(int seconds)
+{
+    if (seconds <= 0)
+        return {};
+    const int h = seconds / 3600, m = seconds / 60 % 60, s = seconds % 60;
+    return h > 0 ? QStringLiteral("%1:%2:%3").arg(h).arg(m, 2, 10, QLatin1Char('0')).arg(s, 2, 10, QLatin1Char('0'))
+                 : QStringLiteral("%1:%2").arg(m).arg(s, 2, 10, QLatin1Char('0'));
+}
+
 void stopTool(QProcess *process)
 {
     if (!process || process->state() == QProcess::NotRunning)

@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets LinguistTools)
 qt_standard_project_setup()
 
 # App icon: resources/DefDownloader.icns is generated from resources/icon.svg.
@@ -19,6 +19,8 @@ qt_add_executable(DefDownloader WIN32 MACOSX_BUNDLE
     src/tools.cpp
     src/tooltab.h
     src/tooltab.cpp
+    src/convert.h
+    src/convert.cpp
     src/simple.h
     src/simple.cpp
     src/widgets.h
@@ -31,6 +33,17 @@ if(WIN32)
 endif()
 
 target_link_libraries(DefDownloader PRIVATE Qt6::Widgets)
+
+# The texts in the code are Italian. English lives in translations/DefDownloader_en.ts
+# and ends up inside the executable (":/i18n/DefDownloader_en.qm").
+# After changing a text: cmake --build build --target update_translations, then
+# fill in the new entries of the .ts file.
+qt_add_translations(TARGETS DefDownloader
+    TS_FILES translations/DefDownloader_en.ts
+    LUPDATE_OPTIONS -locations none -no-obsolete
+)
+# Compared with the latest release on GitHub when the app opens.
+target_compile_definitions(DefDownloader PRIVATE APP_VERSION="${PROJECT_VERSION}")
 
 set_target_properties(DefDownloader PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "DefDownloader"

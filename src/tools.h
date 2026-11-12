@@ -5,6 +5,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 // One command-line option of yt-dlp or ffmpeg, as read from the tool's own help.
 struct OptionDef {
     enum Position { Global, Input, Output, Either };
@@ -65,3 +67,12 @@ void instagramTargets(const QStringList &inputs, QStringList &profiles, QStringL
 QString downloadsDir();
 
 QString shellQuote(const QString &arg);
+
+// Where new versions are published.
+inline const QString kReleasesUrl = QStringLiteral("https://github.com/elia2810/DefDownloader/releases/latest");
+// Asks GitHub for the number of the latest release ("1.2.3"). Nothing happens
+// when it cannot be known: no network, no curl on this computer.
+void fetchLatestVersion(QObject *context, std::function<void(const QString &)> done);
+
+// "3:05" or "1:02:03"; empty when the duration is not known.
+QString formatDuration(int seconds);

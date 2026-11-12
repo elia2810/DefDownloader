@@ -9,6 +9,8 @@
 #include <QTemporaryDir>
 #include <QWidget>
 
+#include <functional>
+
 class QButtonGroup;
 class QCheckBox;
 class QComboBox;
@@ -122,6 +124,8 @@ public:
 
     // The row of site buttons; the window places it next to the mode switch.
     QWidget *serviceBar() const { return m_serviceBar; }
+    // One header button is checked at a time, also those added by the window.
+    QButtonGroup *serviceGroup() const { return m_serviceGroup; }
     void addFromText(const QString &text);
 
 private:
@@ -136,6 +140,9 @@ private:
     void removeRow(DownloadRow *row);
     void resolveWithYtDlp(DownloadRow *row, const QString &url, const QString &instagramPost);
     void resolveWithSpotDl(DownloadRow *row, const QString &target);
+    // The answer to "this link has very many entries": all, the first ones, or none.
+    enum class LongList { All, First, None };
+    void askAboutLongList(DownloadRow *row, int total, std::function<void(LongList)> answer);
 
     void downloadAll();
     void clearAll();

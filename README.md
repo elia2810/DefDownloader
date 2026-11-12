@@ -11,9 +11,26 @@ Un'interfaccia grafica per scaricare e convertire. Si apre su una schermata semp
 - **Sito**: YouTube, Spotify, Instagram o TikTok. Incollando un link il sito viene riconosciuto da solo; i link di altri siti passano da yt-dlp.
 - **Link**: un link incollato diventa subito una riga della lista; una playlist (o un album di Spotify) aggiunge una riga per ogni elemento. Vale anche per il link di un video aperto da una playlist (`watch?v=…&list=…`): per avere solo quel video, togli la parte `&list=…`.
 - **Video e Audio**: le due spunte decidono cosa scaricare; per ciascuno si scelgono il formato e, con il cursore, la qualità (risoluzione del video, bitrate dell'audio). Le scelte valgono per i link aggiunti dopo: ogni riga conserva quelle con cui è stata aggiunta.
+- **Liste lunghe**: quando un link contiene più di 50 elementi (una playlist lunga, un canale intero) l'app si ferma ai primi 50 e chiede se aggiungerli tutti, tenere solo quelli o annullare.
 - **Lista**: ogni riga ha il proprio menu "Video + audio / Solo video / Solo audio", il pulsante per scaricarla o fermarla, la barra di avanzamento con la velocità e il cestino per toglierla. "Scarica tutti" avvia tutta la lista, tre elementi alla volta.
 
 Per Spotify e per i profili Instagram la barra indica solo che il download è in corso: spotDL e instaloader non comunicano la percentuale.
+
+## Lingua e aggiornamenti
+
+- **Lingua**: italiano o inglese, dal pulsante **IT / EN** in alto a destra. Al primo avvio l'app segue la lingua del sistema (italiano su un sistema in italiano, altrimenti inglese). Cambiando lingua la finestra viene ricreata, quindi la lista si svuota.
+- **Aggiornamenti**: all'apertura l'app chiede a GitHub qual è l'ultima versione pubblicata; se è più nuova di quella installata compare una fascia con il pulsante "Scarica", che apre la pagina delle release. Nient'altro viene inviato o scaricato. Il controllo usa `curl`, già presente su macOS e su Windows 10 e successivi: senza rete o senza `curl` non compare nulla.
+
+## Schermata FFMPEG
+
+Il pulsante **FFMPEG**, in alto a destra accanto all'interruttore, apre le conversioni già pronte: scegli (o trascini) un file video o audio e spunti quello che ti serve.
+
+![La schermata FFMPEG: un video diventa un audio per WhatsApp](docs/converti.png)
+
+- **Converti in**: mp4, mkv, mov, webm, avi, gif, mp3, m4a, aac, opus, ogg, flac, wav, oppure "Altro…" per scrivere una qualsiasi estensione che ffmpeg conosce. "Nessuna conversione" lascia il formato del file: serve per applicare solo la compressione o i miglioramenti. Quando il nuovo formato può contenere il video e l'audio così come sono, vengono copiati senza ricodifica (veloce e senza perdita).
+- **Comprimi l'audio**: "Fino a 64 MB" o "Fino a 16 MB", per mandare il file su WhatsApp. Il risultato è sempre un file audio (da un video viene estratto solo l'audio) con la qualità più alta che sta nel limite; se serve passa da solo a mono. Senza un formato scelto esce un mp3, oppure lo stesso formato dell'audio di partenza quando è mp3, m4a, aac, opus o ogg.
+- **Migliora l'audio**: riduci il rumore di fondo, esalta la voce, uniforma il volume, accorcia le pause di silenzio (solo quando il risultato è un file audio), mono. Si possono combinare tra loro e con la compressione. Su un video senza conversione il video resta intatto e cambia solo l'audio.
+- **Nome del risultato**: lo decide l'app, accanto al file di partenza o nella cartella scelta in "Salva in": `intervista.mp4` con voce esaltata e limite di 16 MB diventa `intervista_voce_whatsapp16.mp3` (`intervista_voice_whatsapp16.mp3` con l'app in inglese). Nessun file viene mai sovrascritto: se il nome esiste già si aggiunge un numero.
 
 ## Modalità avanzata
 

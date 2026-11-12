@@ -7,7 +7,6 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QCoreApplication>
-#include <QDesktopServices>
 #include <QDir>
 #include <QEvent>
 #include <QFile>
@@ -50,20 +49,12 @@ const QStringList kVideoFormats = {QStringLiteral("mp4"), QStringLiteral("mkv"),
 const QStringList kAudioFormats = {QStringLiteral("mp3"), QStringLiteral("m4a"), QStringLiteral("opus"),
                                    QStringLiteral("flac"), QStringLiteral("wav")};
 const int kMaxParallel = 3;
-const QColor kErrorColor(0xE0, 0x4F, 0x45);
+// A link that yields more entries than this asks before adding the rest.
+const int kManyEntries = 50;
 
 bool isLossless(const QString &format)
 {
     return format == QLatin1String("flac") || format == QLatin1String("wav");
-}
-
-QString formatDuration(int seconds)
-{
-    if (seconds <= 0)
-        return {};
-    const int h = seconds / 3600, m = seconds / 60 % 60, s = seconds % 60;
-    return h > 0 ? QStringLiteral("%1:%2:%3").arg(h).arg(m, 2, 10, QLatin1Char('0')).arg(s, 2, 10, QLatin1Char('0'))
-                 : QStringLiteral("%1:%2").arg(m).arg(s, 2, 10, QLatin1Char('0'));
 }
 
 QString formatSpeed(double bytesPerSecond)
@@ -631,17 +622,7 @@ void DownloadRow::handleYtDlpLine(const QString &line)
 
 void DownloadRow::reveal()
 {
-    const bool hasFile = !m_filePath.isEmpty() && QFileInfo::exists(m_filePath);
-#if defined(Q_OS_MACOS)
-    if (hasFile && QProcess::startDetached(QStringLiteral("open"), {QStringLiteral("-R"), m_filePath}))
-        return;
-#elif defined(Q_OS_WIN)
-    if (hasFile && QProcess::startDetached(QStringLiteral("explorer"),
-                                           {QStringLiteral("/select,"), QDir::toNativeSeparators(m_filePath)}))
-        return;
-#endif
-    QDesktopServices::openUrl(
-        QUrl::fromLocalFile(hasFile ? QFileInfo(m_filePath).absolutePath() : m_directory));
+    revealFile(m_filePath, m_directory);
 }
 
 // ---------------------------------------------------------------------------
@@ -659,22 +640,15 @@ SimplePage::SimplePage(QWidget *parent)
     barLayout->setSpacing(4);
     m_serviceGroup = new QButtonGroup(this);
     for (Service service : {Service::YouTube, Service::Spotify, Service::Instagram, Service::TikTok}) {
-        auto *button = new QToolButton;
-        button->setCheckable(true);
-        button->setIcon(serviceIcon(service));
-        button->setIconSize(QSize(28, 28));
-        button->setText(serviceName(service));
-        button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        button->setCursor(Qt::PointingHandCursor);
-        button->setMinimumWidth(78);
-        button->setStyleSheet(QStringLiteral(
-            "QToolButton { border: 1px solid transparent; border-radius: 9px; padding: 5px 8px 3px 8px; }"
-            "QToolButton:hover { background: rgba(128, 128, 128, 0.16); }"
-            "QToolButton:checked { background: rgba(128, 128, 128, 0.22); border-color: palette(highlight); }"));
+        QToolButton *button = headerButton(serviceIcon(service), serviceName(service));
         m_serviceGroup->addButton(button, int(service));
         barLayout->addWidget(button);
     }
-    connect(m_serviceGroup, &QButtonGroup::idClicked, this, [this](int id) { setService(Service(id)); });
+    // The window adds its own buttons to the group (other screens): not sites.
+    connect(m_serviceGroup, &QButtonGroup::idClicked, this, [this](int id) {
+        if (id >= 0 && id <= int(Service::TikTok))
+            setService(Service(id));
+    });
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(12, 6, 12, 12);
@@ -1035,9 +1009,37 @@ void SimplePage::resolveWithYtDlp(DownloadRow *row, const QString &url, const QS
         QByteArray buffer;
         int count = 0;
         QPointer<DownloadRow> last;
+        QList<QPointer<DownloadRow>> rows; // every row this link produced
+        QList<QJsonObject> held;           // entries waiting for the answer about a long list
+        enum { Open, Asking, Everything, Closed } more = Open;
     };
     auto pending = std::make_shared<Pending>();
-    const auto takeLines = [this, row, pending](bool flush) {
+    auto *process = new QProcess(row); // stopped with the row
+    const QPointer<QProcess> reader(process);
+
+    const auto addEntry = [this, row, pending](const QJsonObject &entry) {
+        QString link = entry.value(QLatin1String("webpage_url")).toString();
+        if (link.isEmpty())
+            link = entry.value(QLatin1String("url")).toString();
+        QString title = entry.value(QLatin1String("title")).toString();
+        if (title.isEmpty())
+            title = link;
+        QString author = entry.value(QLatin1String("channel")).toString();
+        if (author.isEmpty())
+            author = entry.value(QLatin1String("uploader")).toString();
+        const int seconds = int(entry.value(QLatin1String("duration")).toDouble());
+
+        DownloadRow *target = row;
+        if (pending->count++ > 0) {
+            const int after = m_rows.indexOf(pending->last ? pending->last.data() : row);
+            target = addRow(row->service(), DownloadRow::YtDlp, link, row->settings(), after + 1);
+        }
+        target->setTarget(DownloadRow::YtDlp, link);
+        target->setInfo(title, author, seconds);
+        pending->last = target;
+        pending->rows.append(target);
+    };
+    const auto takeLines = [this, row, pending, reader, addEntry](bool flush) {
         while (true) {
             qsizetype end = pending->buffer.indexOf('\n');
             if (end < 0 && flush && !pending->buffer.isEmpty())
@@ -1047,32 +1049,46 @@ void SimplePage::resolveWithYtDlp(DownloadRow *row, const QString &url, const QS
             const QJsonObject entry = QJsonDocument::fromJson(pending->buffer.left(end)).object();
             pending->buffer.remove(0, end + 1);
 
-            QString link = entry.value(QLatin1String("webpage_url")).toString();
-            if (link.isEmpty())
-                link = entry.value(QLatin1String("url")).toString();
-            QString title = entry.value(QLatin1String("title")).toString();
             // Entries of a playlist without a title are removed or private videos.
-            if (link.isEmpty() || (title.isEmpty() && entry.contains(QLatin1String("playlist_title"))))
+            if ((entry.value(QLatin1String("webpage_url")).toString().isEmpty()
+                 && entry.value(QLatin1String("url")).toString().isEmpty())
+                || (entry.value(QLatin1String("title")).toString().isEmpty()
+                    && entry.contains(QLatin1String("playlist_title"))))
                 continue;
-            if (title.isEmpty())
-                title = link;
-            QString author = entry.value(QLatin1String("channel")).toString();
-            if (author.isEmpty())
-                author = entry.value(QLatin1String("uploader")).toString();
-            const int seconds = int(entry.value(QLatin1String("duration")).toDouble());
 
-            DownloadRow *target = row;
-            if (pending->count++ > 0) {
-                const int after = m_rows.indexOf(pending->last ? pending->last.data() : row);
-                target = addRow(row->service(), DownloadRow::YtDlp, link, row->settings(), after + 1);
+            if (pending->more == Pending::Closed)
+                continue;
+            if (pending->more == Pending::Open && pending->count >= kManyEntries) {
+                // A long playlist or a whole channel: the rest waits for the answer.
+                pending->more = Pending::Asking;
+                askAboutLongList(row, entry.value(QLatin1String("playlist_count")).toInt(),
+                                 [this, pending, reader, addEntry](LongList choice) {
+                    const QList<QJsonObject> held = pending->held;
+                    pending->held.clear();
+                    pending->more = choice == LongList::All ? Pending::Everything : Pending::Closed;
+                    if (choice == LongList::All) {
+                        for (const QJsonObject &entry : held)
+                            addEntry(entry);
+                        return;
+                    }
+                    if (reader)
+                        stopTool(reader); // nothing more is wanted from this link
+                    if (choice == LongList::None) {
+                        const QList<QPointer<DownloadRow>> rows = pending->rows;
+                        for (const QPointer<DownloadRow> &added : rows) {
+                            if (added)
+                                removeRow(added);
+                        }
+                    }
+                });
             }
-            target->setTarget(DownloadRow::YtDlp, link);
-            target->setInfo(title, author, seconds);
-            pending->last = target;
+            if (pending->more == Pending::Asking)
+                pending->held.append(entry);
+            else
+                addEntry(entry);
         }
     };
 
-    auto *process = new QProcess(row); // stopped with the row
     process->setProperty("reading", true);
     process->setProcessEnvironment(toolEnvironment());
     connect(process, &QProcess::readyReadStandardOutput, row, [process, pending, takeLines] {
@@ -1105,7 +1121,7 @@ void SimplePage::resolveWithYtDlp(DownloadRow *row, const QString &url, const QS
     process->start(program, {QStringLiteral("--flat-playlist"),
                              wantsWholePlaylist(url) ? QStringLiteral("--yes-playlist") : QStringLiteral("--no-playlist"),
                              QStringLiteral("--no-warnings"), QStringLiteral("--no-colors"), QStringLiteral("--print"),
-                             QStringLiteral("%(.{title,webpage_url,url,duration,playlist_title,channel,uploader})j"),
+                             QStringLiteral("%(.{title,webpage_url,url,duration,playlist_title,playlist_count,channel,uploader})j"),
                              url});
     process->closeWriteChannel();
 }
@@ -1132,25 +1148,42 @@ void SimplePage::resolveWithSpotDl(DownloadRow *row, const QString &target)
             songs = QJsonDocument::fromJson(saved.readAll()).array();
         saved.remove();
 
-        DownloadRow *last = nullptr;
+        QList<QJsonObject> tracks;
         for (const QJsonValue &value : std::as_const(songs)) {
-            const QJsonObject song = value.toObject();
-            const QString link = song.value(QLatin1String("url")).toString();
-            if (link.isEmpty())
-                continue;
-            QStringList artists;
-            for (const QJsonValue &artist : song.value(QLatin1String("artists")).toArray())
-                artists << artist.toString();
-            DownloadRow *entry = row;
-            if (last)
-                entry = addRow(Service::Spotify, DownloadRow::SpotDl, link, row->settings(), m_rows.indexOf(last) + 1);
-            entry->setTarget(DownloadRow::SpotDl, link);
-            entry->setInfo(song.value(QLatin1String("name")).toString(), artists.join(QStringLiteral(", ")),
-                           song.value(QLatin1String("duration")).toInt());
-            last = entry;
+            if (!value.toObject().value(QLatin1String("url")).toString().isEmpty())
+                tracks.append(value.toObject());
         }
-        if (!last)
+        if (tracks.isEmpty()) {
             row->setFailed(tr("Nessun brano trovato"));
+            return;
+        }
+        const auto addTracks = [this, row, tracks](qsizetype count) {
+            DownloadRow *last = nullptr;
+            for (const QJsonObject &song : tracks.first(count)) {
+                QStringList artists;
+                for (const QJsonValue &artist : song.value(QLatin1String("artists")).toArray())
+                    artists << artist.toString();
+                const QString link = song.value(QLatin1String("url")).toString();
+                DownloadRow *entry = row;
+                if (last)
+                    entry = addRow(Service::Spotify, DownloadRow::SpotDl, link, row->settings(), m_rows.indexOf(last) + 1);
+                entry->setTarget(DownloadRow::SpotDl, link);
+                entry->setInfo(song.value(QLatin1String("name")).toString(), artists.join(QStringLiteral(", ")),
+                               song.value(QLatin1String("duration")).toInt());
+                last = entry;
+            }
+        };
+        if (tracks.size() <= kManyEntries) {
+            addTracks(tracks.size());
+            return;
+        }
+        // A long playlist: nothing is added before the answer.
+        askAboutLongList(row, int(tracks.size()), [this, row, tracks, addTracks](LongList choice) {
+            if (choice == LongList::None)
+                removeRow(row);
+            else
+                addTracks(choice == LongList::All ? tracks.size() : kManyEntries);
+        });
     });
     connect(process, &QProcess::errorOccurred, row, [row, process](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
@@ -1160,6 +1193,39 @@ void SimplePage::resolveWithSpotDl(DownloadRow *row, const QString &target)
     });
     process->start(program, {QStringLiteral("save"), target, QStringLiteral("--save-file"), file});
     process->closeWriteChannel();
+}
+
+// Asked when a link turns out to be a long playlist or a whole channel. The
+// question does not block: the link keeps being read while it is open.
+void SimplePage::askAboutLongList(DownloadRow *row, int total, std::function<void(LongList)> answer)
+{
+    auto *box = new QMessageBox(window());
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setIcon(QMessageBox::Warning);
+    box->setWindowTitle(tr("Lista molto lunga"));
+    box->setText(total > kManyEntries ? tr("Questo link contiene %1 elementi.").arg(total)
+                                      : tr("Questo link contiene più di %1 elementi.").arg(kManyEntries));
+    box->setInformativeText(tr("È una playlist lunga o un canale intero: scaricare tutto può richiedere "
+                               "molto tempo e molto spazio su disco.\n\nCosa vuoi aggiungere alla lista?"));
+    QPushButton *all = box->addButton(total > kManyEntries ? tr("Tutti e %1").arg(total) : tr("Tutti"),
+                                      QMessageBox::AcceptRole);
+    QPushButton *first = box->addButton(tr("Solo i primi %1").arg(kManyEntries), QMessageBox::ActionRole);
+    box->addButton(tr("Annulla"), QMessageBox::RejectRole);
+    box->setDefaultButton(first);
+
+    // The row may be deleted while the question is open: then nobody is asking any more.
+    const auto gone = std::make_shared<bool>(false);
+    connect(row, &QObject::destroyed, box, [box, gone] {
+        *gone = true;
+        box->close();
+    });
+    connect(box, &QMessageBox::finished, this, [box, all, first, gone, answer] {
+        if (*gone)
+            return;
+        const QAbstractButton *clicked = box->clickedButton();
+        answer(clicked == all ? LongList::All : clicked == first ? LongList::First : LongList::None);
+    });
+    box->open();
 }
 
 // ---------------------------------------------------------------------------

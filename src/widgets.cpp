@@ -1,7 +1,13 @@
 #include "widgets.h"
 
+#include <QDesktopServices>
+#include <QDir>
+#include <QFileInfo>
 #include <QPainter>
 #include <QPainterPath>
+#include <QProcess>
+#include <QToolButton>
+#include <QUrl>
 #include <QVariantAnimation>
 
 QString serviceName(Service service)
@@ -107,6 +113,80 @@ QIcon serviceIcon(Service service)
         icon.addPixmap(servicePixmap(service, size, 2));
     }
     return icon;
+}
+
+QPixmap ffmpegPixmap(int size, qreal devicePixelRatio)
+{
+    QPixmap pixmap(QSize(size, size) * devicePixelRatio);
+    pixmap.setDevicePixelRatio(devicePixelRatio);
+    pixmap.fill(Qt::transparent);
+
+    QPainter p(&pixmap);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.scale(size, size);
+    p.setPen(Qt::NoPen);
+    QLinearGradient gradient(0.1, 0.95, 0.9, 0.05);
+    gradient.setColorAt(0.0, QColor(0x0B, 0x6B, 0x3A));
+    gradient.setColorAt(1.0, QColor(0x3F, 0xC4, 0x6E));
+    p.setBrush(gradient);
+    p.drawRoundedRect(QRectF(0.03, 0.03, 0.94, 0.94), 0.24, 0.24);
+
+    // A slanted F: stem, long top bar, short middle bar.
+    QPainterPath letter;
+    letter.moveTo(0.37, 0.77);
+    letter.lineTo(0.37, 0.25);
+    letter.lineTo(0.71, 0.25);
+    letter.moveTo(0.37, 0.50);
+    letter.lineTo(0.61, 0.50);
+    QTransform slant;
+    slant.translate(0.5, 0.5);
+    slant.shear(-0.16, 0);
+    slant.translate(-0.5, -0.5);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(Qt::white, 0.125, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.drawPath(slant.map(letter));
+    return pixmap;
+}
+
+QIcon ffmpegIcon()
+{
+    QIcon icon;
+    for (int size : {24, 32, 48}) {
+        icon.addPixmap(ffmpegPixmap(size, 1));
+        icon.addPixmap(ffmpegPixmap(size, 2));
+    }
+    return icon;
+}
+
+QToolButton *headerButton(const QIcon &icon, const QString &text)
+{
+    auto *button = new QToolButton;
+    button->setCheckable(true);
+    button->setIcon(icon);
+    button->setIconSize(QSize(28, 28));
+    button->setText(text);
+    button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setMinimumWidth(78);
+    button->setStyleSheet(QStringLiteral(
+        "QToolButton { border: 1px solid transparent; border-radius: 9px; padding: 5px 8px 3px 8px; }"
+        "QToolButton:hover { background: rgba(128, 128, 128, 0.16); }"
+        "QToolButton:checked { background: rgba(128, 128, 128, 0.22); border-color: palette(highlight); }"));
+    return button;
+}
+
+void revealFile(const QString &file, const QString &directory)
+{
+    const bool hasFile = !file.isEmpty() && QFileInfo::exists(file);
+#if defined(Q_OS_MACOS)
+    if (hasFile && QProcess::startDetached(QStringLiteral("open"), {QStringLiteral("-R"), file}))
+        return;
+#elif defined(Q_OS_WIN)
+    if (hasFile && QProcess::startDetached(QStringLiteral("explorer"),
+                                           {QStringLiteral("/select,"), QDir::toNativeSeparators(file)}))
+        return;
+#endif
+    QDesktopServices::openUrl(QUrl::fromLocalFile(hasFile ? QFileInfo(file).absolutePath() : directory));
 }
 
 QIcon glyphIcon(Glyph glyph, const QColor &color)
@@ -260,6 +340,6 @@ void ElidedLabel::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setPen(palette().color(foregroundRole()));
-    p.drawText(rect(), Qt::AlignLeft | Qt::AlignVCenter,
-               fontMetrics().elidedText(m_text, Qt::ElideRight, width()));
+    p.drawText(rect(), (alignment() & Qt::AlignHorizontal_Mask) | Qt::AlignVCenter,
+               fontMetrics().elidedText(m_text, m_mode, width()));
 }
