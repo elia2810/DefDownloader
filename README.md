@@ -2,7 +2,9 @@
 
 # DefDownloader
 
-Un'interfaccia grafica per scaricare e convertire. Si apre su una schermata semplice: scegli il sito, incolli i link, scegli formato e qualità e scarichi. L'interruttore **Avanzata** in alto a destra mostra invece tutte le opzioni dei programmi a riga di comando che l'app usa.
+*The app is also available in English (the **IT / EN** button in the top right corner). This page is in Italian.*
+
+Un'interfaccia grafica per scaricare e convertire, in italiano e in inglese. Si apre su una schermata semplice: scegli il sito, incolli i link, scegli formato e qualità e scarichi. In alto a destra ci sono il pulsante **FFMPEG**, per convertire e comprimere un file che hai già, e l'interruttore **Avanzata**, che mostra invece tutte le opzioni dei programmi a riga di comando che l'app usa.
 
 ![La schermata semplice: una lista di link con avanzamento e velocità](docs/semplice.png)
 
@@ -16,10 +18,16 @@ Un'interfaccia grafica per scaricare e convertire. Si apre su una schermata semp
 
 Per Spotify e per i profili Instagram la barra indica solo che il download è in corso: spotDL e instaloader non comunicano la percentuale.
 
+<p align="center"><img src="docs/lista-lunga.png" width="438" alt="L'avviso per un link con 130 elementi: solo i primi 50, annulla, tutti e 130"></p>
+
 ## Lingua e aggiornamenti
 
 - **Lingua**: italiano o inglese, dal pulsante **IT / EN** in alto a destra. Al primo avvio l'app segue la lingua del sistema (italiano su un sistema in italiano, altrimenti inglese). Cambiando lingua la finestra viene ricreata, quindi la lista si svuota.
 - **Aggiornamenti**: all'apertura l'app chiede a GitHub qual è l'ultima versione pubblicata; se è più nuova di quella installata compare una fascia con il pulsante "Scarica", che apre la pagina delle release. Nient'altro viene inviato o scaricato. Il controllo usa `curl`, già presente su macOS e su Windows 10 e successivi: senza rete o senza `curl` non compare nulla.
+
+![La fascia che avvisa di una versione nuova](docs/aggiornamento.png)
+
+![La schermata FFMPEG in inglese](docs/english.png)
 
 ## Schermata FFMPEG
 
@@ -99,6 +107,14 @@ Per creare il `.dmg` da distribuire, con Qt e gli strumenti inclusi:
 ./fetch-tools-mac.sh
 ./package-mac.sh
 ```
+
+I testi dell'interfaccia sono scritti in italiano nel codice; l'inglese è in [translations/DefDownloader_en.ts](translations/DefDownloader_en.ts) e finisce dentro l'eseguibile. Dopo aver cambiato o aggiunto un testo:
+
+```bash
+cmake --build build --target update_translations
+```
+
+poi si traducono le voci nuove del file (quelle lasciate vuote restano in italiano). `--lang en` o `--lang it` avvia l'app in una lingua senza cambiare quella salvata.
 
 Windows: la build è automatica, vedi [.github/workflows/windows.yml](.github/workflows/windows.yml). Parte a ogni push su `main` e, sui tag `v*`, allega lo zip alla release.
 
