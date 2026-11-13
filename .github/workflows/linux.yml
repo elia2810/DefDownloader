@@ -130,7 +130,12 @@ jobs:
 
       - name: Pack the AppImage
         run: |
+          # appimagetool wants the icon in the top folder as a PNG; linuxdeploy
+          # linked the SVG there.
+          rm -f AppDir/io.github.elia2810.DefDownloader.svg
+          cp AppDir/usr/share/icons/hicolor/256x256/apps/io.github.elia2810.DefDownloader.png AppDir/
           ls -la AppDir AppDir/usr/bin
+          du -sh AppDir/usr/*
           ARCH=x86_64 deploy/appimagetool-x86_64.AppImage AppDir DefDownloader-linux-x86_64.AppImage
           ls -la DefDownloader-linux-x86_64.AppImage
 
@@ -139,10 +144,11 @@ jobs:
       - name: Smoke test
         run: |
           app="$PWD/DefDownloader-linux-x86_64.AppImage"
+          # Without the Qt of the runner: only what is inside the image counts.
+          unset LD_LIBRARY_PATH QT_PLUGIN_PATH QML2_IMPORT_PATH
 
-          # With an empty PATH only the tools inside the image can be found.
-          "$app" --appimage-extract > /dev/null
-          env -i HOME="$HOME" PATH=/nonexistent timeout 600 squashfs-root/usr/bin/DefDownloader --selftest > selftest.txt
+          # With an empty environment only the tools inside the image can be found.
+          timeout 600 env -i HOME="$HOME" PATH=/nonexistent APPIMAGE_EXTRACT_AND_RUN=1 "$app" --selftest > selftest.txt
           grep -v '^      ' selftest.txt
           for tool in yt-dlp ffmpeg spotdl instaloader; do
             if ! grep -Eq "^== $tool: /.+/usr/bin/$tool\$" selftest.txt; then
@@ -154,7 +160,6 @@ jobs:
             echo "::error::options not parsed"
             exit 1
           fi
-          rm -rf squashfs-root
 
           QT_QPA_PLATFORM=xcb timeout 180 xvfb-run -a "$app" --screenshot "$PWD/window.png" 3 login
           test -s window.png
