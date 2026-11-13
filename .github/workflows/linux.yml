@@ -179,8 +179,13 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: DefDownloader-linux-x86_64
+          path: DefDownloader-linux-x86_64.AppImage
+
+      # Apart from the package, to look at the pictures without downloading it.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-smoke-test
           path: |
-            DefDownloader-linux-x86_64.AppImage
             window.png
             wayland.png
             selftest.txt
