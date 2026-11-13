@@ -330,8 +330,17 @@ void ToolTab::loadOptions()
     // The standalone builds of yt-dlp and spotdl need several seconds to print
     // their help, so it is kept until the executable changes.
     const QFileInfo info(m_program);
+    QString programPath = info.canonicalFilePath();
+#ifdef Q_OS_LINUX
+    // An AppImage is mounted on a different folder at every launch: the tools
+    // inside it are named by their place in the image, or nothing would be kept.
+    const QString mounted = qEnvironmentVariable("APPDIR");
+    const QString appDir = mounted.isEmpty() ? QString() : QDir(mounted).canonicalPath();
+    if (!appDir.isEmpty() && programPath.startsWith(appDir + QLatin1Char('/')))
+        programPath = QStringLiteral("$APPDIR") + programPath.mid(appDir.size());
+#endif
     const QString stamp = QStringLiteral("%1|%2|%3")
-                              .arg(info.canonicalFilePath())
+                              .arg(programPath)
                               .arg(info.size())
                               .arg(info.lastModified().toSecsSinceEpoch());
     const QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);

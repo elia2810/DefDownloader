@@ -34,6 +34,20 @@ endif()
 
 target_link_libraries(DefDownloader PRIVATE Qt6::Widgets)
 
+if(UNIX AND NOT APPLE)
+    # Linux: the window icon travels inside the executable (":/DefDownloader.png"),
+    # and `cmake --install` adds what a desktop needs to list the app in its menu.
+    # resources/DefDownloader.png is generated from resources/icon.svg.
+    set(APP_ID io.github.elia2810.DefDownloader)
+    qt_add_resources(DefDownloader "icon" PREFIX "/" BASE resources FILES resources/DefDownloader.png)
+    install(TARGETS DefDownloader RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES resources/${APP_ID}.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES resources/DefDownloader.png
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps RENAME ${APP_ID}.png)
+    install(FILES resources/icon.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps RENAME ${APP_ID}.svg)
+endif()
+
 # The texts in the code are Italian. English lives in translations/DefDownloader_en.ts
 # and ends up inside the executable (":/i18n/DefDownloader_en.qm").
 # After changing a text: cmake --build build --target update_translations, then

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=DefDownloader
+GenericName=Video and audio downloader
+GenericName[it]=Scarica video e audio
+Comment=Download and convert video and audio from YouTube, Spotify, Instagram and TikTok
+Comment[it]=Scarica e converti video e audio da YouTube, Spotify, Instagram e TikTok
+Exec=DefDownloader
+Icon=io.github.elia2810.DefDownloader
+Terminal=false
+Categories=Network;FileTransfer;Qt;
+Keywords=youtube;yt-dlp;ffmpeg;spotify;instagram;tiktok;download;mp3;mp4;
+StartupWMClass=DefDownloader

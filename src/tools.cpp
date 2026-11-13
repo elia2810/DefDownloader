@@ -414,8 +414,9 @@ QString shellQuote(const QString &arg)
 }
 
 // The page of the latest release redirects to ".../releases/tag/v1.2.3": the
-// address it points to is all that is read. curl comes with macOS and with
-// Windows 10 and later, so the app needs no network library of its own.
+// address it points to is all that is read. curl comes with macOS, with
+// Windows 10 and later and with nearly every Linux system, so the app needs
+// no network library of its own.
 void fetchLatestVersion(QObject *context, std::function<void(const QString &)> done)
 {
     const QString curl = QStandardPaths::findExecutable(QStringLiteral("curl"));

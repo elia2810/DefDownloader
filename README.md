@@ -23,7 +23,7 @@ Per Spotify e per i profili Instagram la barra indica solo che il download è in
 ## Lingua e aggiornamenti
 
 - **Lingua**: italiano o inglese, dal pulsante **IT / EN** in alto a destra. Al primo avvio l'app segue la lingua del sistema (italiano su un sistema in italiano, altrimenti inglese). Cambiando lingua la finestra viene ricreata, quindi la lista si svuota.
-- **Aggiornamenti**: all'apertura l'app chiede a GitHub qual è l'ultima versione pubblicata; se è più nuova di quella installata compare una fascia con il pulsante "Scarica", che apre la pagina delle release. Nient'altro viene inviato o scaricato. Il controllo usa `curl`, già presente su macOS e su Windows 10 e successivi: senza rete o senza `curl` non compare nulla.
+- **Aggiornamenti**: all'apertura l'app chiede a GitHub qual è l'ultima versione pubblicata; se è più nuova di quella installata compare una fascia con il pulsante "Scarica", che apre la pagina delle release. Nient'altro viene inviato o scaricato. Il controllo usa `curl`, già presente su macOS, su Windows 10 e successivi e su quasi tutti i sistemi Linux: senza rete o senza `curl` non compare nulla.
 
 ![La fascia che avvisa di una versione nuova](docs/aggiornamento.png)
 
@@ -68,13 +68,25 @@ Scarica l'ultima versione dalla [pagina delle release](https://github.com/elia28
 | --- | --- | --- |
 | macOS (Apple Silicon, macOS 27 o successivo) | `DefDownloader-macos-arm64.dmg` | Apri il dmg e trascina l'app in Applicazioni |
 | Windows (64 bit) | `DefDownloader-windows-x64.zip` | Estrai la cartella e avvia `DefDownloader.exe` |
+| Linux (x86_64, glibc 2.39 o successiva: Arch, CachyOS, Fedora 40, Ubuntu 24.04…) | `DefDownloader-linux-x86_64.AppImage` | Rendi il file eseguibile e avvialo (vedi sotto) |
 
-Entrambi includono già tutti gli strumenti (yt-dlp, ffmpeg, ffprobe, spotDL, instaloader). Se sul computer sono già installati, l'app usa quelli.
+Tutti includono già gli strumenti (yt-dlp, ffmpeg, ffprobe, spotDL, instaloader). Se sul computer sono già installati, l'app usa quelli.
 
 Le app non sono firmate da uno sviluppatore registrato, quindi al primo avvio il sistema chiede conferma:
 
 - **macOS**: Impostazioni → Privacy e sicurezza → "Apri comunque"
 - **Windows**: "Ulteriori informazioni" → "Esegui comunque"
+
+### Linux
+
+L'AppImage è un file solo, senza installazione: contiene Qt e gli strumenti, e funziona sia con Wayland sia con X11.
+
+```bash
+chmod +x DefDownloader-linux-x86_64.AppImage
+./DefDownloader-linux-x86_64.AppImage
+```
+
+In alternativa: tasto destro sul file → Proprietà → Permessi → "Eseguibile", poi doppio clic. Per avere l'app nel menu delle applicazioni si può usare [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) o [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher). Se l'AppImage non parte perché manca FUSE, avviala con `--appimage-extract-and-run`.
 
 ## Come si usa la modalità avanzata
 
@@ -116,7 +128,18 @@ cmake --build build --target update_translations
 
 poi si traducono le voci nuove del file (quelle lasciate vuote restano in italiano). `--lang en` o `--lang it` avvia l'app in una lingua senza cambiare quella salvata.
 
-Windows: la build è automatica, vedi [.github/workflows/windows.yml](.github/workflows/windows.yml). Parte a ogni push su `main` e, sui tag `v*`, allega lo zip alla release.
+Linux, ad esempio su Arch o CachyOS (su altre distribuzioni cambiano solo i nomi dei pacchetti):
+
+```bash
+sudo pacman -S --needed base-devel cmake ninja qt6-base qt6-tools yt-dlp ffmpeg
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+build/DefDownloader
+```
+
+spotDL e instaloader sono facoltativi: senza, le loro schermate avvisano che lo strumento manca. `sudo cmake --install build --prefix /usr/local` aggiunge l'app al menu delle applicazioni, con la sua icona.
+
+Windows e Linux: i pacchetti sono automatici, vedi [.github/workflows/windows.yml](.github/workflows/windows.yml) e [.github/workflows/linux.yml](.github/workflows/linux.yml). Le build partono a ogni push su `main` e, sui tag `v*`, allegano lo zip e l'AppImage alla release. Un ramo chiamato `ci/…` fa partire la build Linux senza toccare `main`.
 
 ## Licenza
 
@@ -124,7 +147,7 @@ Il codice di questo progetto è rilasciato con licenza [MIT](LICENSE).
 
 I pacchetti scaricabili contengono anche programmi di terzi, ciascuno con la propria licenza:
 
-- [FFmpeg](https://ffmpeg.org), GPLv3. macOS: build di Homebrew, sorgente su <https://ffmpeg.org/download.html>. Windows: build di [yt-dlp/FFmpeg-Builds](https://github.com/yt-dlp/FFmpeg-Builds).
+- [FFmpeg](https://ffmpeg.org), GPLv3. macOS: build di Homebrew, sorgente su <https://ffmpeg.org/download.html>. Windows: build di [yt-dlp/FFmpeg-Builds](https://github.com/yt-dlp/FFmpeg-Builds). Linux: build di [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds).
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp), Unlicense.
 - [spotDL](https://github.com/spotDL/spotify-downloader), MIT.
 - [instaloader](https://github.com/instaloader/instaloader), MIT.

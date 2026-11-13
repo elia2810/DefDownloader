@@ -1,0 +1,191 @@
+name: Linux build
+
+# Builds the app for Linux and packs it as an AppImage: one file with Qt and
+# the command-line tools (yt-dlp, ffmpeg, spotdl, instaloader) inside. On a
+# version tag (v*) the AppImage is attached to the release of that tag.
+# A branch named ci/... runs the build without touching main.
+on:
+  push:
+    branches: [main, 'ci/**']
+    tags: ['v*']
+    paths-ignore: ['**.md', 'LICENSE', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    # The AppImage runs on systems at least as new as the one it is built on
+    # (glibc 2.39).
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # The runner has no FUSE: AppImages unpack themselves instead of mounting.
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/checkout@v7
+
+      # Headers to build against Qt, the libraries its X11 and Wayland plugins
+      # load (they are copied into the AppImage), and what the smoke test uses.
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev libxkbcommon-dev \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
+            libfontconfig1 libdbus-1-3 libwayland-client0 libwayland-cursor0 libwayland-egl1 \
+            python3-venv python3-dev xvfb weston
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.1'
+          arch: linux_gcc_64
+          cache: true
+
+      # Installed into AppDir/usr: the executable, the menu entry and the icons.
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          cmake --build build
+          DESTDIR="$PWD/AppDir" cmake --install build
+
+      # None of the three publishes checksums.
+      - name: Get the packaging tools
+        run: |
+          gh release download continuous --repo linuxdeploy/linuxdeploy --pattern linuxdeploy-x86_64.AppImage --dir deploy
+          gh release download continuous --repo linuxdeploy/linuxdeploy-plugin-qt --pattern linuxdeploy-plugin-qt-x86_64.AppImage --dir deploy
+          gh release download continuous --repo AppImage/appimagetool --pattern appimagetool-x86_64.AppImage --dir deploy
+          chmod +x deploy/*.AppImage
+
+      # The build with shared libraries: ffmpeg and ffprobe share them, so the
+      # two weigh less than the static executables.
+      - name: Get ffmpeg
+        run: |
+          tar=ffmpeg-master-latest-linux64-gpl-shared.tar.xz
+          gh release download latest --repo BtbN/FFmpeg-Builds --pattern "$tar" --pattern checksums.sha256 --dir tools
+          expected="$(awk -v file="$tar" '$2 == file { print $1 }' tools/checksums.sha256)"
+          actual="$(sha256sum "tools/$tar" | awk '{ print $1 }')"
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "::error::$tar checksum mismatch: expected '$expected', got '$actual'"
+            exit 1
+          fi
+          mkdir tools/ffmpeg
+          tar -xf "tools/$tar" -C tools/ffmpeg --strip-components=1
+
+      # linuxdeploy copies Qt, ffmpeg and the libraries they need into AppDir and
+      # makes every executable look for them there. The standalone Python tools
+      # are added afterwards: rewriting them would break them.
+      - name: Bundle Qt and ffmpeg
+        run: |
+          export PATH="$PWD/deploy:$PATH"
+          export QMAKE="$QT_ROOT_DIR/bin/qmake"
+          export LD_LIBRARY_PATH="$QT_ROOT_DIR/lib:$PWD/tools/ffmpeg/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          # The strip inside linuxdeploy does not understand current libraries.
+          export NO_STRIP=1
+          linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt \
+            --executable tools/ffmpeg/bin/ffmpeg --executable tools/ffmpeg/bin/ffprobe
+
+          # The Qt plugin only bundles X11. Wayland: the platform plugins and
+          # what they load in turn, then a second pass for their libraries.
+          plugins=AppDir/usr/plugins
+          cp "$QT_ROOT_DIR"/plugins/platforms/libqwayland*.so "$plugins/platforms/"
+          extra="--deploy-deps-only $plugins/platforms"
+          for dir in wayland-decoration-client wayland-graphics-integration-client wayland-shell-integration; do
+            cp -r "$QT_ROOT_DIR/plugins/$dir" "$plugins/"
+            extra="$extra --deploy-deps-only $plugins/$dir"
+          done
+          linuxdeploy-x86_64.AppImage --appdir AppDir $extra
+          test -e AppDir/AppRun
+
+      # The app looks for the tools next to its executable when none are installed.
+      - name: Bundle yt-dlp
+        run: |
+          gh release download --repo yt-dlp/yt-dlp --pattern yt-dlp_linux --pattern SHA2-256SUMS --dir tools
+          expected="$(awk '$2 == "yt-dlp_linux" { print $1 }' tools/SHA2-256SUMS)"
+          actual="$(sha256sum tools/yt-dlp_linux | awk '{ print $1 }')"
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "::error::yt-dlp_linux checksum mismatch: expected '$expected', got '$actual'"
+            exit 1
+          fi
+          install -m 755 tools/yt-dlp_linux AppDir/usr/bin/yt-dlp
+
+      - name: Bundle spotdl
+        run: |
+          gh release download --repo spotDL/spotify-downloader --pattern 'spotdl-*-linux' --dir tools/spotdl
+          install -m 755 tools/spotdl/spotdl-*-linux AppDir/usr/bin/spotdl
+
+      # No official Linux build exists: built here from PyPI with PyInstaller.
+      - name: Bundle instaloader
+        run: |
+          python3 -m venv tools/venv
+          tools/venv/bin/pip install --quiet --disable-pip-version-check instaloader pyinstaller
+          printf 'from instaloader.__main__ import main\n\nmain()\n' > tools/run_instaloader.py
+          tools/venv/bin/pyinstaller --onefile --name instaloader --log-level WARN --noconfirm \
+            --distpath tools/instaloader --workpath tools/work --specpath tools tools/run_instaloader.py
+          install -m 755 tools/instaloader/instaloader AppDir/usr/bin/instaloader
+
+      - name: Pack the AppImage
+        run: |
+          ls -la AppDir AppDir/usr/bin
+          ARCH=x86_64 deploy/appimagetool-x86_64.AppImage AppDir DefDownloader-linux-x86_64.AppImage
+          ls -la DefDownloader-linux-x86_64.AppImage
+
+      # Runs the packaged app: first the parsers against the bundled tools, then
+      # the real window, saved as a picture, under X11 and under Wayland.
+      - name: Smoke test
+        run: |
+          app="$PWD/DefDownloader-linux-x86_64.AppImage"
+
+          # With an empty PATH only the tools inside the image can be found.
+          "$app" --appimage-extract > /dev/null
+          env -i HOME="$HOME" PATH=/nonexistent timeout 600 squashfs-root/usr/bin/DefDownloader --selftest > selftest.txt
+          grep -v '^      ' selftest.txt
+          for tool in yt-dlp ffmpeg spotdl instaloader; do
+            if ! grep -Eq "^== $tool: /.+/usr/bin/$tool\$" selftest.txt; then
+              echo "::error::bundled $tool not found"
+              exit 1
+            fi
+          done
+          if ! awk '/total options: / { n++; if ($3 < 30) bad = 1 } END { exit !(n == 4 && !bad) }' selftest.txt; then
+            echo "::error::options not parsed"
+            exit 1
+          fi
+          rm -rf squashfs-root
+
+          QT_QPA_PLATFORM=xcb timeout 180 xvfb-run -a "$app" --screenshot "$PWD/window.png" 3 login
+          test -s window.png
+
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg"
+          mkdir -p -m 700 "$XDG_RUNTIME_DIR"
+          weston --backend=headless --socket=wl-smoke > weston.log 2>&1 &
+          for i in $(seq 50); do
+            [ -S "$XDG_RUNTIME_DIR/wl-smoke" ] && break
+            sleep 0.2
+          done
+          WAYLAND_DISPLAY=wl-smoke QT_QPA_PLATFORM=wayland timeout 120 "$app" --screenshot "$PWD/wayland.png" \
+            || { cat weston.log; exit 1; }
+          kill %1
+          test -s wayland.png
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DefDownloader-linux-x86_64
+          path: |
+            DefDownloader-linux-x86_64.AppImage
+            window.png
+            wayland.png
+            selftest.txt
+
+      # The Windows build may be creating the same release at the same moment.
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag='${{ github.ref_name }}'
+          gh release view "$tag" > /dev/null 2>&1 \
+            || gh release create "$tag" --title "$tag" --notes '' --verify-tag \
+            || gh release view "$tag" > /dev/null
+          gh release upload "$tag" DefDownloader-linux-x86_64.AppImage --clobber

@@ -10,6 +10,7 @@
 #include <QDesktopServices>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QLocale>
 #include <QMenu>
@@ -324,6 +325,13 @@ int main(int argc, char *argv[])
     }
 
     QApplication app(argc, argv);
+#ifdef Q_OS_LINUX
+    // The name of the installed .desktop file: how a Wayland desktop matches the
+    // window with its menu entry. The picture covers X11 and an app that is not
+    // installed (the AppImage).
+    QGuiApplication::setDesktopFileName(QStringLiteral("io.github.elia2810.DefDownloader"));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/DefDownloader.png")));
+#endif
     const QStringList args = app.arguments();
     const qsizetype shot = args.indexOf(QStringLiteral("--screenshot"));
     // `--lang it|en`: the language for this run only.
