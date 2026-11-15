@@ -77,7 +77,7 @@ Scarica l'ultima versione dalla [pagina delle release](https://github.com/elia28
 
 | Sistema | File | Come si installa |
 | --- | --- | --- |
-| macOS (Apple Silicon, macOS 27 o successivo) | `DefDownloader-macos-arm64.dmg` | Apri il dmg e trascina l'app in Applicazioni |
+| macOS (Apple Silicon, macOS 15 o successivo) | `DefDownloader-macos-arm64.dmg` | Apri il dmg e trascina l'app in Applicazioni |
 | Windows (64 bit) | `DefDownloader-windows-x64.zip` | Estrai la cartella e avvia `DefDownloader.exe` |
 | Linux (x86_64, glibc 2.39 o successiva: Arch, CachyOS, Fedora 40, Ubuntu 24.04…) | `DefDownloader-linux-x86_64.AppImage` | Rendi il file eseguibile e avvialo (vedi sotto) |
 
@@ -150,7 +150,9 @@ build/DefDownloader
 
 spotDL e instaloader sono facoltativi: senza, le loro schermate avvisano che lo strumento manca. `sudo cmake --install build --prefix /usr/local` aggiunge l'app al menu delle applicazioni, con la sua icona.
 
-Windows e Linux: i pacchetti sono automatici, vedi [.github/workflows/windows.yml](.github/workflows/windows.yml) e [.github/workflows/linux.yml](.github/workflows/linux.yml). Le build partono a ogni push su `main` e, sui tag `v*`, allegano lo zip e l'AppImage alla release; il testo della release è il file `docs/release-notes/<tag>.md`. Un ramo chiamato `ci/…` fa partire la build Linux senza toccare `main`.
+I pacchetti dei tre sistemi sono automatici, vedi [.github/workflows/macos.yml](.github/workflows/macos.yml) (che usa i due script qui sopra), [.github/workflows/windows.yml](.github/workflows/windows.yml) e [.github/workflows/linux.yml](.github/workflows/linux.yml). Le build partono a ogni push su `main` e, sui tag `v*`, allegano il dmg, lo zip e l'AppImage alla release; il testo della release è il file `docs/release-notes/<tag>.md`. Un ramo chiamato `ci/…` fa partire le build macOS e Linux senza toccare `main`.
+
+Il dmg funziona dal macOS su cui è costruito in poi: quello automatico nasce su macOS 15, uno fatto a mano con `./package-mac.sh` su un Mac più recente richiede quella versione.
 
 ## Licenza
 
