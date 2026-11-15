@@ -123,7 +123,7 @@ public:
         m_convert = new ConvertPage;
         // Part of the same group as the site buttons: one screen at a time.
         m_convertButton = headerButton(ffmpegIcon(), QStringLiteral("FFMPEG"));
-        m_convertButton->setToolTip(tr("Converti, comprimi e migliora un file video o audio"));
+        m_convertButton->setToolTip(tr("Converti, comprimi e migliora file video e audio"));
         m_simple->serviceGroup()->addButton(m_convertButton, kConvertId);
         m_tabBar = new QTabBar;
         m_tabBar->setExpanding(false);
@@ -244,14 +244,13 @@ public:
         m_updateBar->show();
     }
 
-    // Used by --screenshot: the conversion screen, with a file when one is given.
-    void openConvert(const QString &file)
+    // Used by --screenshot: the conversion screen, with the files that are given.
+    void openConvert(const QStringList &files)
     {
         m_remember = false;
         m_toggle->setChecked(false);
         m_convertButton->click();
-        if (!file.isEmpty())
-            m_convert->setInput(file);
+        m_convert->setInputs(files);
     }
 
 private:
@@ -262,13 +261,13 @@ private:
         if (code == currentLanguage() || !languageChosen)
             return;
         // The new window starts empty: say so when something would be lost.
-        bool busy = !findChildren<DownloadRow *>().isEmpty();
+        bool busy = !findChildren<DownloadRow *>().isEmpty() || !findChildren<FileRow *>().isEmpty();
         const QList<QProcess *> processes = m_convert->findChildren<QProcess *>();
         for (const QProcess *process : processes)
             busy = busy || process->state() != QProcess::NotRunning;
         if (busy
             && QMessageBox::question(this, tr("Lingua"),
-                                     tr("Per cambiare lingua la finestra viene ricreata: la lista si svuota e "
+                                     tr("Per cambiare lingua la finestra viene ricreata: le liste si svuotano e "
                                         "quello che è in corso viene fermato. Continuare?"))
                    != QMessageBox::Yes)
             return;
@@ -373,7 +372,7 @@ int main(int argc, char *argv[])
     openWindow();
 
     // `DefDownloader --screenshot out.png [tab] [filter]`: saves a picture of the window and quits.
-    // Without a tab number the picture shows the simple screen; `ffmpeg [file]`
+    // Without a tab number the picture shows the simple screen; `ffmpeg [file...]`
     // instead of the number shows the conversion screen.
     if (shot >= 0 && shot + 1 < args.size()) {
         const QString file = args.at(shot + 1);
@@ -382,8 +381,12 @@ int main(int argc, char *argv[])
         const QString filter = args.value(shot + 3);
         MainWindow *shown = window.get();
         ToolTab *page = hasTab ? shown->openTab(tab) : nullptr;
-        if (args.value(shot + 2) == QLatin1String("ffmpeg"))
-            shown->openConvert(filter);
+        if (args.value(shot + 2) == QLatin1String("ffmpeg")) {
+            QStringList files;
+            for (qsizetype i = shot + 3; i < args.size() && !args.at(i).startsWith(QLatin1String("--")); ++i)
+                files << args.at(i);
+            shown->openConvert(files);
+        }
         // The tabs need time to run their tool and read its options.
         QTimer::singleShot(hasTab ? 12000 : 1000, shown, [shown, page, file, filter] {
             if (page)

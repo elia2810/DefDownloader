@@ -25,10 +25,14 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
 #include <QSettings>
+#include <QStackedLayout>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -253,14 +257,129 @@ QLabel *rowLabel(const QString &text)
 } // namespace
 
 // ---------------------------------------------------------------------------
+// FileRow
+
+FileRow::FileRow(const QString &name, const QString &path, QWidget *parent)
+    : QFrame(parent)
+{
+    m_title = new ElidedLabel;
+    m_title->setElideMode(Qt::ElideMiddle);
+    QFont bold = m_title->font();
+    bold.setBold(true);
+    m_title->setFont(bold);
+    m_title->setFullText(name);
+    m_title->setToolTip(path);
+    QFont small = font();
+    small.setPointSizeF(small.pointSizeF() * 0.9);
+    m_details = new ElidedLabel;
+    m_details->setFont(small);
+    m_bar = new QProgressBar;
+    m_bar->setTextVisible(false);
+    m_bar->setFixedHeight(8);
+    m_bar->setRange(0, 1000);
+    m_status = new ElidedLabel;
+    m_status->setFont(small);
+    m_status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_status->setFixedWidth(130);
+
+    auto *progress = new QHBoxLayout;
+    progress->setSpacing(8);
+    progress->addWidget(m_bar, 1);
+    progress->addWidget(m_status);
+    auto *middle = new QVBoxLayout;
+    middle->setSpacing(3);
+    middle->addWidget(m_title);
+    middle->addWidget(m_details);
+    middle->addLayout(progress);
+
+    auto *root = new QHBoxLayout(this);
+    root->setContentsMargins(8, 8, 2, 9);
+    root->setSpacing(6);
+    root->addLayout(middle, 1);
+    const auto button = [root](const QString &tip) {
+        auto *b = new QToolButton;
+        b->setIconSize(QSize(16, 16));
+        b->setFixedSize(28, 28);
+        b->setStyleSheet(QStringLiteral("QToolButton { border: none; border-radius: 6px; }"
+                                        "QToolButton:hover { background: rgba(128, 128, 128, 0.25); }"
+                                        "QToolButton:pressed { background: rgba(128, 128, 128, 0.4); }"));
+        b->setCursor(Qt::PointingHandCursor);
+        b->setToolTip(tip);
+        root->addWidget(b, 0, Qt::AlignVCenter);
+        return b;
+    };
+    m_revealButton = button(tr("Mostra nella cartella"));
+    m_removeButton = button(tr("Togli dalla lista"));
+    // Hidden, the button keeps its place: the bars of all the rows end together.
+    QSizePolicy keep = m_revealButton->sizePolicy();
+    keep.setRetainSizeWhenHidden(true);
+    m_revealButton->setSizePolicy(keep);
+    m_revealButton->hide();
+    connect(m_revealButton, &QToolButton::clicked, this, &FileRow::revealRequested);
+    connect(m_removeButton, &QToolButton::clicked, this, &FileRow::removeRequested);
+    refreshIcons();
+}
+
+void FileRow::setDetails(const QString &text, bool error)
+{
+    QPalette pal = palette();
+    pal.setColor(QPalette::WindowText, error ? kErrorColor : pal.color(QPalette::PlaceholderText));
+    m_details->setPalette(pal);
+    m_details->setFullText(text);
+}
+
+void FileRow::setProgress(int permille, const QString &status)
+{
+    m_bar->setRange(0, permille < 0 ? 0 : 1000);
+    m_bar->setValue(qMax(0, permille));
+    m_status->setFullText(status);
+}
+
+void FileRow::setDone(bool done)
+{
+    m_revealButton->setVisible(done);
+}
+
+void FileRow::setLocked(bool locked)
+{
+    m_removeButton->setEnabled(!locked);
+}
+
+void FileRow::refreshIcons()
+{
+    const QColor color = palette().color(QPalette::WindowText);
+    m_revealButton->setIcon(glyphIcon(Glyph::Folder, color));
+    m_removeButton->setIcon(glyphIcon(Glyph::Trash, color));
+}
+
+void FileRow::changeEvent(QEvent *event)
+{
+    QFrame::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange && m_removeButton)
+        refreshIcons(); // the icons follow the text colour
+}
+
+void FileRow::paintEvent(QPaintEvent *event)
+{
+    QFrame::paintEvent(event);
+    QPainter p(this);
+    QColor line = palette().color(QPalette::WindowText);
+    line.setAlphaF(0.12);
+    p.setPen(line);
+    p.drawLine(8, height() - 1, width() - 8, height() - 1);
+}
+
+// ---------------------------------------------------------------------------
 // FileDrop
 
 FileDrop::FileDrop(QWidget *parent)
     : QFrame(parent)
 {
-    setCursor(Qt::PointingHandCursor);
     setMinimumHeight(150);
 
+    // --- no file, or one: the whole box talks about it -----------------------
+    m_single = new QWidget;
+    m_single->setCursor(Qt::PointingHandCursor);
     auto *icon = new QLabel;
     icon->setPixmap(ffmpegPixmap(44, qApp->devicePixelRatio()));
     icon->setFixedSize(44, 44);
@@ -278,16 +397,70 @@ FileDrop::FileDrop(QWidget *parent)
     m_button->setCursor(Qt::PointingHandCursor);
     connect(m_button, &QPushButton::clicked, this, &FileDrop::clicked);
 
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(24, 16, 24, 16);
-    layout->setSpacing(8);
-    layout->addStretch(1);
-    layout->addWidget(icon, 0, Qt::AlignHCenter);
-    layout->addWidget(m_title);
-    layout->addWidget(m_details);
-    layout->addSpacing(4);
-    layout->addWidget(m_button, 0, Qt::AlignHCenter);
-    layout->addStretch(1);
+    auto *single = new QVBoxLayout(m_single);
+    single->setContentsMargins(24, 16, 24, 16);
+    single->setSpacing(8);
+    single->addStretch(1);
+    single->addWidget(icon, 0, Qt::AlignHCenter);
+    single->addWidget(m_title);
+    single->addWidget(m_details);
+    single->addSpacing(4);
+    single->addWidget(m_button, 0, Qt::AlignHCenter);
+    single->addStretch(1);
+
+    // --- several files: a list that scrolls ----------------------------------
+    auto *list = new QWidget;
+    m_countLabel = new QLabel;
+    QFont countFont = m_countLabel->font();
+    countFont.setBold(true);
+    m_countLabel->setFont(countFont);
+    auto *hint = new ElidedLabel;
+    hint->setFullText(tr("convertiti uno alla volta, dall'alto in basso"));
+    QPalette faded = hint->palette();
+    faded.setColor(QPalette::WindowText, faded.color(QPalette::PlaceholderText));
+    hint->setPalette(faded);
+    m_addButton = new QPushButton(tr("Aggiungi file…"));
+    m_addButton->setAutoDefault(false);
+    m_addButton->setToolTip(tr("Anche trascinando altri file qui dentro"));
+    m_clearButton = new QPushButton(tr("Svuota"));
+    m_clearButton->setAutoDefault(false);
+    m_clearButton->setToolTip(tr("Toglie tutti i file dalla lista; i file restano dove sono"));
+    connect(m_addButton, &QPushButton::clicked, this, &FileDrop::addClicked);
+    connect(m_clearButton, &QPushButton::clicked, this, &FileDrop::clearClicked);
+    auto *head = new QHBoxLayout;
+    head->setContentsMargins(8, 0, 2, 0);
+    head->setSpacing(10);
+    head->addWidget(m_countLabel);
+    head->addWidget(hint, 1);
+    head->addWidget(m_addButton);
+    head->addWidget(m_clearButton);
+
+    m_scroll = new QScrollArea;
+    m_scroll->setWidgetResizable(true);
+    m_scroll->setFrameShape(QFrame::NoFrame);
+    m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *host = new QWidget;
+    auto *hostLayout = new QVBoxLayout(host);
+    hostLayout->setContentsMargins(0, 0, 0, 0);
+    hostLayout->setSpacing(0);
+    m_rows = new QVBoxLayout;
+    m_rows->setSpacing(0);
+    hostLayout->addLayout(m_rows);
+    hostLayout->addStretch(1);
+    m_scroll->setWidget(host);
+    // The box paints its own background: the list lets it show through.
+    host->setAutoFillBackground(false);
+    m_scroll->viewport()->setAutoFillBackground(false);
+
+    auto *listLayout = new QVBoxLayout(list);
+    listLayout->setContentsMargins(10, 10, 10, 8);
+    listLayout->setSpacing(6);
+    listLayout->addLayout(head);
+    listLayout->addWidget(m_scroll, 1);
+
+    m_stack = new QStackedLayout(this);
+    m_stack->addWidget(m_single);
+    m_stack->addWidget(list);
 
     setFile({}, {});
 }
@@ -295,13 +468,36 @@ FileDrop::FileDrop(QWidget *parent)
 void FileDrop::setFile(const QString &name, const QString &details, bool error)
 {
     const bool empty = name.isEmpty();
-    m_title->setFullText(empty ? tr("Trascina qui un file video o audio") : name);
-    m_details->setFullText(empty ? tr("oppure sceglilo dal computer") : details);
+    m_title->setFullText(empty ? tr("Trascina qui uno o più file video o audio") : name);
+    m_details->setFullText(empty ? tr("oppure sceglili dal computer") : details);
     m_button->setText(empty ? tr("Scegli file…") : tr("Cambia file…"));
 
     QPalette pal = palette();
     pal.setColor(QPalette::WindowText, error ? kErrorColor : pal.color(QPalette::PlaceholderText));
     m_details->setPalette(pal);
+}
+
+void FileDrop::addRow(FileRow *row)
+{
+    m_rows->addWidget(row);
+}
+
+void FileDrop::removeRow(FileRow *row)
+{
+    m_rows->removeWidget(row);
+    row->hide();
+    row->deleteLater();
+}
+
+void FileDrop::setCount(int count)
+{
+    m_countLabel->setText(tr("%n file", nullptr, count));
+    m_stack->setCurrentIndex(count > 1 ? 1 : 0);
+}
+
+void FileDrop::showRow(FileRow *row)
+{
+    m_scroll->ensureWidgetVisible(row, 0, 8);
 }
 
 void FileDrop::setHighlighted(bool on)
@@ -310,6 +506,16 @@ void FileDrop::setHighlighted(bool on)
         return;
     m_highlighted = on;
     update();
+}
+
+// The list stays in use while it is converted: it can be scrolled to see how
+// each file is doing.
+void FileDrop::setBusy(bool busy)
+{
+    m_busy = busy;
+    m_single->setCursor(busy ? Qt::ArrowCursor : Qt::PointingHandCursor);
+    for (QPushButton *button : {m_button, m_addButton, m_clearButton})
+        button->setEnabled(!busy);
 }
 
 void FileDrop::paintEvent(QPaintEvent *)
@@ -327,9 +533,11 @@ void FileDrop::paintEvent(QPaintEvent *)
     p.drawRoundedRect(frame, 12, 12);
 }
 
+// A click anywhere chooses the file, as long as the box is not showing the list.
 void FileDrop::mouseReleaseEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
+    if (!m_busy && m_stack->currentIndex() == 0 && event->button() == Qt::LeftButton
+        && rect().contains(event->position().toPoint()))
         emit clicked();
 }
 
@@ -604,6 +812,17 @@ QString ConvertPage::outputPath(const QString &input, const QString &directory, 
 // ---------------------------------------------------------------------------
 // ConvertPage
 
+// One file of the list.
+struct ConvertItem {
+    enum State { Probing, Unreadable, Waiting, Queued, Running, Done, Failed, Stopped };
+    MediaInfo info;  // only the path, until ffprobe has read the file
+    State state = Probing;
+    QString error;   // why it cannot be read, or why its conversion failed
+    QString output;  // the file written, once Done
+    QProcess *probe = nullptr;
+    FileRow *row = nullptr;
+};
+
 ConvertPage::ConvertPage(QWidget *parent)
     : QWidget(parent)
 {
@@ -616,7 +835,9 @@ ConvertPage::ConvertPage(QWidget *parent)
 
     m_drop = new FileDrop;
     root->addWidget(m_drop, 1);
-    connect(m_drop, &FileDrop::clicked, this, &ConvertPage::browse);
+    connect(m_drop, &FileDrop::clicked, this, [this] { browse(false); });
+    connect(m_drop, &FileDrop::addClicked, this, [this] { browse(true); });
+    connect(m_drop, &FileDrop::clearClicked, this, &ConvertPage::clearItems);
 
     auto *grid = new QGridLayout;
     grid->setHorizontalSpacing(14);
@@ -697,7 +918,7 @@ ConvertPage::ConvertPage(QWidget *parent)
 
     // --- folder ------------------------------------------------------------
     m_dirEdit = new QLineEdit(settings.value(QStringLiteral("convert/dir")).toString());
-    m_dirEdit->setPlaceholderText(tr("Nella stessa cartella del file"));
+    m_dirEdit->setPlaceholderText(tr("Nella stessa cartella di ogni file"));
     m_dirEdit->setClearButtonEnabled(true);
     m_dirButton = new QPushButton(tr("Sfoglia…"));
     m_dirButton->setAutoDefault(false);
@@ -707,14 +928,14 @@ ConvertPage::ConvertPage(QWidget *parent)
     grid->addWidget(rowLabel(tr("Salva in")), 3, 0);
     grid->addLayout(dirRow, 3, 1);
     connect(m_dirButton, &QPushButton::clicked, this, [this] {
-        const QString start = directory().isEmpty() ? QFileInfo(m_info.path).absolutePath() : directory();
+        const QString start = !directory().isEmpty() ? directory()
+                              : m_items.isEmpty() ? QString()
+                                                  : QFileInfo(m_items.first()->info.path).absolutePath();
         const QString dir = QFileDialog::getExistingDirectory(this, tr("Cartella di destinazione"), start);
-        if (!dir.isEmpty()) {
+        if (!dir.isEmpty())
             m_dirEdit->setText(dir);
-            refresh();
-        }
     });
-    connect(m_dirEdit, &QLineEdit::textChanged, this, &ConvertPage::refresh);
+    connect(m_dirEdit, &QLineEdit::textChanged, this, &ConvertPage::choicesChanged);
 
     // --- result and run ----------------------------------------------------
     m_resultLabel = new ElidedLabel;
@@ -780,13 +1001,13 @@ ConvertPage::ConvertPage(QWidget *parent)
             m_limit64->setChecked(false);
     });
     connect(m_format, &QComboBox::currentIndexChanged, this, [this] {
-        refresh();
+        choicesChanged();
         if (m_otherFormat->isVisible())
             m_otherFormat->setFocus();
     });
-    connect(m_otherFormat, &QLineEdit::textChanged, this, &ConvertPage::refresh);
+    connect(m_otherFormat, &QLineEdit::textChanged, this, &ConvertPage::choicesChanged);
     for (QCheckBox *check : {m_limit64, m_limit16, m_denoise, m_voice, m_normalize, m_trimSilence, m_mono})
-        connect(check, &QCheckBox::toggled, this, &ConvertPage::refresh);
+        connect(check, &QCheckBox::toggled, this, &ConvertPage::choicesChanged);
 
     connect(qApp, &QCoreApplication::aboutToQuit, this, &ConvertPage::shutDown);
     refresh();
@@ -795,17 +1016,21 @@ ConvertPage::ConvertPage(QWidget *parent)
 ConvertPage::~ConvertPage()
 {
     shutDown();
+    qDeleteAll(m_items);
 }
 
 // A conversion cut short leaves half a file: it is stopped and removed.
 void ConvertPage::shutDown()
 {
-    if (m_probe) {
-        m_probe->disconnect();
-        m_probe->kill();
-        m_probe->waitForFinished(500);
-        m_probe = nullptr;
+    for (ConvertItem *item : std::as_const(m_items)) {
+        if (!item->probe)
+            continue;
+        item->probe->disconnect();
+        item->probe->kill();
+        item->probe->waitForFinished(500);
+        item->probe = nullptr;
     }
+    m_probing = 0;
     if (!m_process)
         return;
     m_process->disconnect();
@@ -860,85 +1085,233 @@ void ConvertPage::saveOptions()
     settings.setValue(QStringLiteral("convert/dir"), m_dirEdit->text().trimmed());
 }
 
-void ConvertPage::browse()
+// ---------------------------------------------------------------------------
+// The list of files
+
+// add: the chosen files join the list instead of taking its place.
+void ConvertPage::browse(bool add)
 {
     if (m_process)
         return;
     QSettings settings;
-    const QString start = m_info.path.isEmpty() ? settings.value(QStringLiteral("convert/lastDir"), downloadsDir()).toString()
-                                                : QFileInfo(m_info.path).absolutePath();
-    const QString file = QFileDialog::getOpenFileName(
-        this, tr("Scegli un file video o audio"), start,
+    const QString start = m_items.isEmpty() ? settings.value(QStringLiteral("convert/lastDir"), downloadsDir()).toString()
+                                            : QFileInfo(m_items.last()->info.path).absolutePath();
+    const QStringList files = QFileDialog::getOpenFileNames(
+        this, tr("Scegli uno o più file video o audio"), start,
         tr("Video e audio (*.mp4 *.mkv *.mov *.webm *.avi *.m4v *.wmv *.flv *.ts *.mpg *.mpeg *.3gp *.gif "
            "*.mp3 *.m4a *.aac *.opus *.ogg *.oga *.flac *.wav *.wma *.aiff *.aif *.amr *.m4b *.mka);;Tutti i file (*)"));
-    if (!file.isEmpty())
-        setInput(file);
+    if (files.isEmpty())
+        return;
+    if (add)
+        addInputs(files);
+    else
+        setInputs(files);
 }
 
-void ConvertPage::setInput(const QString &path)
+void ConvertPage::setInputs(const QStringList &paths)
 {
     if (m_process)
         return;
-    if (m_probe) {
-        m_probe->disconnect();
-        m_probe->kill();
-        m_probe->deleteLater();
-        m_probe = nullptr;
-    }
-    m_info = MediaInfo();
-    m_info.path = path;
-    m_inputError.clear();
-    m_doneFile.clear();
-    m_revealButton->hide();
-    m_bar->setRange(0, 1000);
-    m_bar->setValue(0);
-    setStatus({});
+    clearItems();
+    addInputs(paths);
+}
 
-    const QFileInfo file(path);
-    const auto fail = [this, file](const QString &message) {
-        m_inputError = message;
-        m_drop->setFile(file.fileName(), message, true);
-        refresh();
-    };
-    if (!file.isFile()) {
-        fail(tr("Non è un file"));
+void ConvertPage::addInputs(const QStringList &paths)
+{
+    if (m_process || paths.isEmpty())
         return;
+    resetStatus();
+    const bool canProbe = !findTool(QStringLiteral("ffprobe")).isEmpty();
+    QString lastDir;
+    for (const QString &path : paths) {
+        const QFileInfo file(path);
+        const QString absolute = file.absoluteFilePath();
+        if (std::any_of(m_items.cbegin(), m_items.cend(),
+                        [&absolute](const ConvertItem *item) { return item->info.path == absolute; }))
+            continue;
+        auto *item = new ConvertItem;
+        item->info.path = absolute;
+        if (!file.isFile()) {
+            item->state = ConvertItem::Unreadable;
+            item->error = tr("Non è un file");
+        } else if (!canProbe) {
+            item->state = ConvertItem::Unreadable;
+            item->error = tr("ffprobe non trovato");
+        } else {
+            lastDir = file.absolutePath();
+        }
+        item->row = new FileRow(file.fileName(), QDir::toNativeSeparators(absolute));
+        connect(item->row, &FileRow::removeRequested, this, [this, item] { removeItem(item); });
+        connect(item->row, &FileRow::revealRequested, this,
+                [item] { revealFile(item->output, QFileInfo(item->output).absolutePath()); });
+        m_drop->addRow(item->row);
+        m_items.append(item);
     }
-    QSettings().setValue(QStringLiteral("convert/lastDir"), file.absolutePath());
+    if (!lastDir.isEmpty())
+        QSettings().setValue(QStringLiteral("convert/lastDir"), lastDir);
+    m_drop->setCount(m_items.size());
+    probeNext();
+    refresh();
+}
+
+void ConvertPage::removeItem(ConvertItem *item)
+{
+    if (m_process || !m_items.removeOne(item))
+        return;
+    if (item->probe) {
+        item->probe->disconnect();
+        item->probe->kill();
+        item->probe->deleteLater();
+        --m_probing;
+    }
+    m_drop->removeRow(item->row);
+    delete item;
+    m_drop->setCount(m_items.size());
+    if (m_items.isEmpty())
+        resetStatus();
+    probeNext();
+    refresh();
+}
+
+void ConvertPage::clearItems()
+{
+    if (m_process)
+        return;
+    for (ConvertItem *item : std::as_const(m_items)) {
+        if (item->probe) {
+            item->probe->disconnect();
+            item->probe->kill();
+            item->probe->deleteLater();
+        }
+        m_drop->removeRow(item->row);
+        delete item;
+    }
+    m_items.clear();
+    m_probing = 0;
+    m_drop->setCount(0);
+    resetStatus();
+    refresh();
+}
+
+// ffprobe reads the files a few at a time: a long list does not start a
+// hundred programs together.
+void ConvertPage::probeNext()
+{
+    static const int atOnce = 3;
+    if (m_probing >= atOnce)
+        return;
     const QString program = findTool(QStringLiteral("ffprobe"));
-    if (program.isEmpty()) {
-        fail(tr("ffprobe non trovato"));
-        return;
+    for (ConvertItem *item : std::as_const(m_items)) {
+        if (m_probing >= atOnce)
+            break;
+        if (item->state != ConvertItem::Probing || item->probe)
+            continue;
+        auto *probe = new QProcess(this);
+        item->probe = probe;
+        ++m_probing;
+        probe->setProcessEnvironment(toolEnvironment());
+        connect(probe, &QProcess::finished, this, [this, item, probe] {
+            const MediaInfo info = parseProbe(probe->readAllStandardOutput(), item->info.path);
+            if (info.valid)
+                item->info = info;
+            endProbe(item, info.valid ? QString() : tr("Non è un file video o audio che ffmpeg sa leggere"));
+        });
+        connect(probe, &QProcess::errorOccurred, this, [this, item](QProcess::ProcessError error) {
+            if (error == QProcess::FailedToStart)
+                endProbe(item, tr("Impossibile avviare ffprobe"));
+        });
+        probe->start(program, {QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-show_entries"),
+                               QStringLiteral("format=duration,size,bit_rate:stream=codec_type,codec_name,width,height,"
+                                              "bit_rate,sample_rate,channels:stream_disposition=attached_pic"),
+                               QStringLiteral("-of"), QStringLiteral("json"), item->info.path});
+        // A program that cannot start says so at once: the probe is already gone.
+        if (item->probe == probe)
+            probe->closeWriteChannel();
     }
+}
 
-    m_drop->setFile(file.fileName(), tr("Lettura del file…"));
-    m_probe = new QProcess(this);
-    QProcess *probe = m_probe;
-    probe->setProcessEnvironment(toolEnvironment());
-    connect(probe, &QProcess::finished, this, [this, probe, path, file, fail] {
-        const MediaInfo info = parseProbe(probe->readAllStandardOutput(), path);
-        probe->deleteLater();
-        m_probe = nullptr;
-        if (!info.valid) {
-            fail(tr("Non è un file video o audio che ffmpeg sa leggere"));
-            return;
+void ConvertPage::endProbe(ConvertItem *item, const QString &error)
+{
+    if (!item->probe)
+        return;
+    item->probe->disconnect();
+    item->probe->deleteLater();
+    item->probe = nullptr;
+    --m_probing;
+    item->state = error.isEmpty() ? ConvertItem::Waiting : ConvertItem::Unreadable;
+    item->error = error;
+    // Not from inside the loop that is starting the probes.
+    QMetaObject::invokeMethod(this, &ConvertPage::probeNext, Qt::QueuedConnection);
+    refresh();
+}
+
+// What a row says about its file. plan: what the current choices make of it.
+void ConvertPage::updateRow(ConvertItem *item, const ConvertPlan &plan)
+{
+    const QString source = describe(item->info);
+    QString details = source;
+    QString status;
+    bool error = false;
+    int bar = 0;
+    switch (item->state) {
+    case ConvertItem::Probing:
+        details = tr("Lettura del file…");
+        break;
+    case ConvertItem::Unreadable:
+    case ConvertItem::Failed:
+        details = item->error;
+        error = true;
+        if (item->state == ConvertItem::Failed)
+            status = tr("Non riuscito");
+        break;
+    case ConvertItem::Waiting:
+        // These choices cannot be applied to this file: it is left out.
+        if (!plan.error.isEmpty() && !plan.nothingToDo) {
+            details = plan.error;
+            error = true;
         }
-        m_info = info;
-        m_drop->setFile(file.fileName(), describe(info));
-        refresh();
-    });
-    connect(probe, &QProcess::errorOccurred, this, [this, probe, fail](QProcess::ProcessError error) {
-        if (error == QProcess::FailedToStart) {
-            probe->deleteLater();
-            m_probe = nullptr;
-            fail(tr("Impossibile avviare ffprobe"));
+        break;
+    case ConvertItem::Queued:
+        status = tr("In coda");
+        break;
+    case ConvertItem::Running:
+        break;
+    case ConvertItem::Done:
+        details = tr("Creato:  %1").arg(QFileInfo(item->output).fileName());
+        status = tr("Fatto  ·  %1").arg(sizeText(QFileInfo(item->output).size()));
+        bar = 1000;
+        break;
+    case ConvertItem::Stopped:
+        status = tr("Interrotto");
+        break;
+    }
+    item->row->setDetails(details, error);
+    if (item->state != ConvertItem::Running) // the conversion writes its own progress
+        item->row->setProgress(bar, status);
+    item->row->setDone(item->state == ConvertItem::Done);
+
+    // Alone, the file fills the box: why a conversion is not possible or did
+    // not work is said below, next to the button.
+    if (m_items.size() == 1) {
+        const bool unread = item->state == ConvertItem::Probing || item->state == ConvertItem::Unreadable;
+        m_drop->setFile(QFileInfo(item->info.path).fileName(), unread ? details : source,
+                        item->state == ConvertItem::Unreadable);
+    }
+}
+
+// A choice was changed: what was converted with the old ones is to do again.
+void ConvertPage::choicesChanged()
+{
+    if (!m_process) {
+        for (ConvertItem *item : std::as_const(m_items)) {
+            if (item->state == ConvertItem::Done || item->state == ConvertItem::Failed
+                || item->state == ConvertItem::Stopped) {
+                item->state = ConvertItem::Waiting;
+                item->error.clear();
+                item->output.clear();
+            }
         }
-    });
-    probe->start(program, {QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-show_entries"),
-                           QStringLiteral("format=duration,size,bit_rate:stream=codec_type,codec_name,width,height,"
-                                          "bit_rate,sample_rate,channels:stream_disposition=attached_pic"),
-                           QStringLiteral("-of"), QStringLiteral("json"), path});
-    probe->closeWriteChannel();
+    }
     refresh();
 }
 
@@ -950,27 +1323,105 @@ void ConvertPage::refresh()
     if (m_process)
         return;
 
-    const ConvertPlan p = plan(m_info, options());
+    const ConvertOptions o = options();
+    QList<const ConvertItem *> ready; // the files these choices can convert
+    QList<ConvertPlan> plans;         // one for each of them
+    ConvertPlan refused;              // why the first of the others cannot
+    bool sameRefusal = true;
+    int readable = 0;
+    bool audioOnly = false;
+    QList<ConvertPlan> all;           // one for each file of the list
+    for (const ConvertItem *item : std::as_const(m_items)) {
+        if (item->state == ConvertItem::Probing || item->state == ConvertItem::Unreadable) {
+            all << ConvertPlan();
+            continue;
+        }
+        const ConvertPlan p = plan(item->info, o);
+        all << p;
+        ++readable;
+        audioOnly = audioOnly || p.audioOnly;
+        if (p.error.isEmpty()) {
+            ready << item;
+            plans << p;
+        } else if (refused.error.isEmpty()) {
+            refused = p;
+        } else if (refused.error != p.error) {
+            sameRefusal = false;
+        }
+    }
+    for (qsizetype i = 0; i < m_items.size(); ++i) {
+        ConvertPlan p = all.at(i);
+        // The choices change the other files and not this one (pauses to
+        // shorten, and this is a video): its row says that it is left out.
+        if (p.nothingToDo && !ready.isEmpty()) {
+            p.nothingToDo = false;
+            p.error = tr("Con queste scelte questo file resterebbe com'è");
+        }
+        updateRow(m_items.at(i), p);
+    }
+    if (m_items.isEmpty())
+        m_drop->setFile({}, {});
     // Removing pauses only makes sense when no video has to stay in sync.
-    m_trimSilence->setEnabled(!m_info.valid || p.audioOnly);
+    m_trimSilence->setEnabled(readable == 0 || audioOnly);
 
     QPalette pal = palette();
+    const QColor faded = pal.color(QPalette::PlaceholderText);
+    const QString separator = QStringLiteral("  ·  ");
     QString text;
-    if (!m_inputError.isEmpty() || m_probe) {
-        pal.setColor(QPalette::WindowText, pal.color(QPalette::PlaceholderText));
-    } else if (!p.error.isEmpty()) {
-        pal.setColor(QPalette::WindowText, p.nothingToDo ? pal.color(QPalette::PlaceholderText) : kErrorColor);
-        text = p.error;
+    if (m_items.isEmpty()) {
+        pal.setColor(QPalette::WindowText, faded);
+        text = plan(MediaInfo(), o).error;
+    } else if (m_probing > 0 || readable == 0) {
+        pal.setColor(QPalette::WindowText, faded); // the box and the rows say what is going on
+    } else if (ready.isEmpty()) {
+        pal.setColor(QPalette::WindowText, refused.nothingToDo ? faded : kErrorColor);
+        text = sameRefusal ? refused.error : tr("Nessuno di questi file si può convertire con queste scelte");
+    } else if (m_items.size() == 1) {
+        const ConvertPlan &p = plans.first();
+        QStringList parts = {QFileInfo(outputPath(ready.first()->info.path, directory(), p)).fileName(), p.details};
+        if (p.estimatedBytes > 0)
+            parts << (o.trimSilence ? tr("al massimo %1") : tr("circa %1")).arg(sizeText(p.estimatedBytes));
+        text = tr("Risultato:  %1").arg(parts.join(separator));
     } else {
-        QStringList parts = {QFileInfo(outputPath(m_info.path, directory(), p)).fileName(), p.details};
-        if (p.estimatedBytes > 0) {
-            parts << (options().trimSilence ? tr("al massimo %1") : tr("circa %1")).arg(sizeText(p.estimatedBytes));
+        // Several files. The line is about the ones the button would convert
+        // now: those still to do or, when none is left, all of them again.
+        QList<ConvertPlan> next;
+        for (qsizetype i = 0; i < ready.size(); ++i) {
+            if (ready.at(i)->state != ConvertItem::Done)
+                next << plans.at(i);
         }
-        text = tr("Risultato:  %1").arg(parts.join(QStringLiteral("  ·  ")));
+        if (next.isEmpty())
+            next = plans;
+        // What they have in common, and the size of all together.
+        QStringList parts = {tr("%n file", nullptr, int(next.size()))};
+        qint64 bytes = 0;
+        bool sameDetails = true;
+        bool sized = true;
+        for (const ConvertPlan &p : std::as_const(next)) {
+            sameDetails = sameDetails && p.details == next.first().details;
+            sized = sized && p.estimatedBytes > 0;
+            bytes += p.estimatedBytes;
+        }
+        if (sameDetails && !next.first().details.isEmpty())
+            parts << next.first().details;
+        if (sized)
+            parts << (o.trimSilence ? tr("al massimo %1 in tutto") : tr("circa %1 in tutto")).arg(sizeText(bytes));
+        if (ready.size() < readable)
+            parts << tr("esclusi: %1").arg(readable - ready.size());
+        text = tr("Risultato:  %1").arg(parts.join(separator));
     }
     m_resultLabel->setPalette(pal);
     m_resultLabel->setFullText(text);
-    m_runButton->setEnabled(m_info.valid && p.error.isEmpty());
+    m_runButton->setEnabled(m_probing == 0 && !ready.isEmpty());
+}
+
+void ConvertPage::resetStatus()
+{
+    m_doneFile.clear();
+    m_revealButton->hide();
+    m_bar->setRange(0, 1000);
+    m_bar->setValue(0);
+    setStatus({});
 }
 
 void ConvertPage::setStatus(const QString &text, bool error)
@@ -984,84 +1435,157 @@ void ConvertPage::setStatus(const QString &text, bool error)
 
 void ConvertPage::setRunning(bool running)
 {
-    for (QWidget *widget : std::initializer_list<QWidget *>{m_drop, m_format, m_otherFormat, m_limit64, m_limit16,
+    for (QWidget *widget : std::initializer_list<QWidget *>{m_format, m_otherFormat, m_limit64, m_limit16,
                                                             m_denoise, m_voice, m_normalize, m_trimSilence, m_mono,
                                                             m_dirEdit, m_dirButton})
         widget->setEnabled(!running);
+    m_drop->setBusy(running);
+    for (ConvertItem *item : std::as_const(m_items))
+        item->row->setLocked(running);
     m_runButton->setText(running ? tr("Ferma") : tr("Converti"));
     m_runButton->setEnabled(true);
 }
 
+// ---------------------------------------------------------------------------
+// The run
+
 void ConvertPage::run()
 {
-    if (m_process || !m_info.valid)
+    if (m_process || m_probing > 0)
         return;
-    if (!QFileInfo(m_info.path).isFile()) {
-        setStatus(tr("Il file non c'è più"), true);
-        return;
+    const ConvertOptions o = options();
+    QList<ConvertItem *> todo;
+    QList<ConvertItem *> done;
+    for (ConvertItem *item : std::as_const(m_items)) {
+        if (item->state == ConvertItem::Probing || item->state == ConvertItem::Unreadable
+            || !plan(item->info, o).error.isEmpty())
+            continue;
+        (item->state == ConvertItem::Done ? done : todo) << item;
     }
-    m_runOptions = options();
-    m_maxKbps = 0;
-    m_attempt = 1;
-    const ConvertPlan p = plan(m_info, m_runOptions);
-    if (!p.error.isEmpty())
+    // Files added later, stopped or failed come first; with none of them the
+    // button converts the same files once more.
+    if (todo.isEmpty())
+        todo = done;
+    if (todo.isEmpty())
         return;
     const QString dir = directory();
     if (!dir.isEmpty() && !QDir().mkpath(dir)) {
         setStatus(tr("La cartella \"%1\" non esiste").arg(dir), true);
         return;
     }
-    m_output = outputPath(m_info.path, dir, p);
+
+    m_runOptions = o;
+    m_runDirectory = dir;
+    m_queue = todo;
+    m_runTotal = int(todo.size());
+    m_runIndex = 0;
+    m_runDone = 0;
+    m_runFailed = 0;
+    m_runBytes = 0;
+    m_lastError.clear();
+    m_stopping = false;
+    m_weighByDuration = std::all_of(todo.cbegin(), todo.cend(),
+                                    [](const ConvertItem *item) { return item->info.duration > 0; });
+    m_weightDone = 0;
+    m_weightTotal = 0;
+    for (ConvertItem *item : std::as_const(todo)) {
+        m_weightTotal += weight(item);
+        item->state = ConvertItem::Queued;
+        item->error.clear();
+        item->output.clear();
+        updateRow(item, {});
+    }
     m_doneFile.clear();
     m_revealButton->hide();
-    launch();
+    setRunning(true);
+    m_runStarted.start();
+    startNext();
 }
 
-void ConvertPage::launch()
+double ConvertPage::weight(const ConvertItem *item) const
+{
+    return m_weighByDuration ? item->info.duration : 1.0;
+}
+
+// The next file of the queue, or the end of the run.
+void ConvertPage::startNext()
+{
+    while (!m_queue.isEmpty()) {
+        m_current = m_queue.takeFirst();
+        ++m_runIndex;
+        m_maxKbps = 0;
+        m_attempt = 1;
+        QString error;
+        if (!QFileInfo(m_current->info.path).isFile()) {
+            error = tr("Il file non c'è più");
+        } else {
+            const ConvertPlan p = plan(m_current->info, m_runOptions);
+            error = p.error;
+            if (error.isEmpty()) {
+                // Named only now: two files that give the same name do not collide.
+                m_output = outputPath(m_current->info.path, m_runDirectory, p);
+                m_current->state = ConvertItem::Running;
+                m_drop->showRow(m_current->row);
+                error = launch();
+            }
+        }
+        if (error.isEmpty())
+            return; // finished() goes on from here
+        failCurrent(error);
+    }
+    finishRun();
+}
+
+// Starts ffmpeg on the current file; returns why it could not.
+QString ConvertPage::launch()
 {
     const QString program = findTool(QStringLiteral("ffmpeg"));
-    if (program.isEmpty()) {
-        setRunning(false);
-        setStatus(tr("ffmpeg non trovato"), true);
-        return;
-    }
-    m_runPlan = plan(m_info, m_runOptions, m_maxKbps);
-    if (!m_runPlan.error.isEmpty()) {
-        setRunning(false);
-        setStatus(m_runPlan.error, true);
-        refresh();
-        return;
-    }
+    if (program.isEmpty())
+        return tr("ffmpeg non trovato");
+    m_runPlan = plan(m_current->info, m_runOptions, m_maxKbps);
+    if (!m_runPlan.error.isEmpty())
+        return m_runPlan.error;
 
     QStringList args = {QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
                         QStringLiteral("-nostdin"), QStringLiteral("-n"),
                         // Read back by readProgress(): how far the output has got.
                         QStringLiteral("-progress"), QStringLiteral("pipe:1"), QStringLiteral("-nostats"),
-                        QStringLiteral("-i"), m_info.path};
+                        QStringLiteral("-i"), m_current->info.path};
     args << m_runPlan.arguments << m_output;
 
     m_progressBuffer.clear();
     m_errors.clear();
-    m_stopping = false;
-    m_process = new QProcess(this);
-    m_process->setProcessEnvironment(toolEnvironment());
-    connect(m_process, &QProcess::readyReadStandardOutput, this, &ConvertPage::readProgress);
-    connect(m_process, &QProcess::readyReadStandardError, this,
-            [this] { m_errors += m_process->readAllStandardError(); });
-    connect(m_process, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
-        finished(true, status == QProcess::NormalExit ? code : -1);
+    QProcess *process = new QProcess(this);
+    m_process = process;
+    process->setProcessEnvironment(toolEnvironment());
+    connect(process, &QProcess::readyReadStandardOutput, this, &ConvertPage::readProgress);
+    connect(process, &QProcess::readyReadStandardError, this,
+            [this, process] { m_errors += process->readAllStandardError(); });
+    connect(process, &QProcess::finished, this, [this, process](int code, QProcess::ExitStatus status) {
+        if (m_process == process)
+            finished(true, status == QProcess::NormalExit ? code : -1);
     });
-    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        if (error == QProcess::FailedToStart)
+    // Queued: a program that cannot start says so from inside start().
+    connect(process, &QProcess::errorOccurred, this, [this, process](QProcess::ProcessError error) {
+        if (m_process == process && error == QProcess::FailedToStart)
             finished(false, -1);
-    });
+    }, Qt::QueuedConnection);
 
-    setRunning(true);
-    m_bar->setRange(0, 0);
-    setStatus(m_attempt > 1 ? tr("Era ancora troppo grande: nuovo tentativo…") : tr("Avvio…"));
+    const QString starting = m_attempt > 1 ? tr("Era ancora troppo grande: nuovo tentativo…") : tr("Avvio…");
+    m_current->row->setProgress(-1, m_attempt > 1 ? tr("Nuovo tentativo…") : tr("Avvio…"));
+    if (m_runTotal > 1) {
+        // The bar below is the whole list; the row has its own.
+        m_bar->setRange(0, 1000);
+        m_bar->setValue(int(m_weightDone / m_weightTotal * 1000));
+        setStatus(tr("File %1 di %2").arg(m_runIndex).arg(m_runTotal));
+    } else {
+        m_bar->setRange(0, 0);
+        setStatus(starting);
+    }
     m_started.start();
-    m_process->start(program, args);
-    m_process->closeWriteChannel();
+    process->start(program, args);
+    process->closeWriteChannel();
+    return {};
 }
 
 void ConvertPage::stop()
@@ -1076,6 +1600,8 @@ void ConvertPage::stop()
 // ffmpeg writes "key=value" lines; out_time_us is the position reached in the output.
 void ConvertPage::readProgress()
 {
+    if (!m_process || !m_current)
+        return;
     m_progressBuffer += m_process->readAllStandardOutput();
     qint64 position = -1;
     qsizetype end;
@@ -1085,14 +1611,23 @@ void ConvertPage::readProgress()
         if (line.startsWith("out_time_us="))
             position = line.mid(12).toLongLong();
     }
-    if (position < 0 || m_stopping || m_info.duration <= 0)
+    if (position < 0 || m_stopping || m_current->info.duration <= 0)
         return;
-    const double fraction = qBound(0.0, position / 1e6 / m_info.duration, 1.0);
+    const double fraction = qBound(0.0, position / 1e6 / m_current->info.duration, 1.0);
+    const auto percent = [](double value) { return QStringLiteral("%1%").arg(int(value * 100)); };
+    m_current->row->setProgress(int(fraction * 1000), percent(fraction));
+
+    // Below: the file when it is alone, otherwise the whole list.
+    const bool list = m_runTotal > 1;
+    const double whole = list ? qBound(0.0, (m_weightDone + weight(m_current) * fraction) / m_weightTotal, 1.0)
+                              : fraction;
+    const qint64 elapsed = list ? m_runStarted.elapsed() : m_started.elapsed();
     m_bar->setRange(0, 1000);
-    m_bar->setValue(int(fraction * 1000));
-    QString text = QStringLiteral("%1%").arg(int(fraction * 100));
-    if (fraction > 0.02 && fraction < 1 && m_started.elapsed() > 1500) {
-        const int left = qMax(1, int(m_started.elapsed() / 1000.0 * (1 - fraction) / fraction));
+    m_bar->setValue(int(whole * 1000));
+    QString text = list ? tr("File %1 di %2").arg(m_runIndex).arg(m_runTotal) + QStringLiteral("  ·  ") + percent(whole)
+                        : percent(whole);
+    if (whole > 0.02 && whole < 1 && elapsed > 1500) {
+        const int left = qMax(1, int(elapsed / 1000.0 * (1 - whole) / whole));
         text += QStringLiteral("  ·  ") + tr("ancora %1").arg(formatDuration(left));
     }
     setStatus(text);
@@ -1100,10 +1635,11 @@ void ConvertPage::readProgress()
 
 void ConvertPage::finished(bool started, int exitCode)
 {
-    if (!m_process)
+    if (!m_process || !m_current)
         return;
     if (started)
         m_errors += m_process->readAllStandardError();
+    m_process->disconnect();
     m_process->deleteLater();
     m_process = nullptr;
 
@@ -1116,54 +1652,117 @@ void ConvertPage::finished(bool started, int exitCode)
             QFile::remove(m_output);
             m_maxKbps = qMin(m_runPlan.kbps - 1, int(m_runPlan.kbps * double(limit) / size * 0.96));
             ++m_attempt;
-            launch();
+            const QString error = launch();
+            if (!error.isEmpty()) {
+                failCurrent(error);
+                startNext();
+            }
             return;
         }
     }
 
+    if (ok) {
+        ConvertItem *item = m_current;
+        m_current = nullptr;
+        item->state = ConvertItem::Done;
+        item->output = m_output;
+        m_doneFile = m_output;
+        ++m_runDone;
+        m_runBytes += QFileInfo(m_output).size();
+        m_weightDone += weight(item);
+        updateRow(item, {});
+        startNext();
+        return;
+    }
+
+    QFile::remove(m_output); // half a file is of no use
+    if (!m_stopping) {
+        const QStringList lines = QString::fromUtf8(m_errors).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        failCurrent(!started ? tr("Impossibile avviare ffmpeg")
+                    : lines.isEmpty() ? tr("Conversione non riuscita") : lines.last().trimmed());
+        startNext();
+        return;
+    }
+    // Stopped: the files still waiting go back to how they were.
+    m_current->state = ConvertItem::Stopped;
+    updateRow(m_current, {});
+    m_current = nullptr;
+    for (ConvertItem *item : std::as_const(m_queue)) {
+        item->state = ConvertItem::Waiting;
+        updateRow(item, {});
+    }
+    m_queue.clear();
+    finishRun();
+}
+
+// The current file could not be converted: the run goes on with the others.
+void ConvertPage::failCurrent(const QString &error)
+{
+    ConvertItem *item = m_current;
+    m_current = nullptr;
+    item->state = ConvertItem::Failed;
+    item->error = error;
+    m_lastError = error;
+    ++m_runFailed;
+    m_weightDone += weight(item);
+    updateRow(item, {});
+}
+
+void ConvertPage::finishRun()
+{
+    const bool stopped = m_stopping;
+    m_stopping = false;
     setRunning(false);
     m_bar->setRange(0, 1000);
-    if (ok) {
-        m_doneFile = m_output;
-        m_bar->setValue(1000);
-        m_revealButton->show();
-        setStatus(tr("Fatto  ·  %1").arg(sizeText(QFileInfo(m_output).size())));
-    } else {
-        QFile::remove(m_output); // half a file is of no use
-        m_bar->setValue(0);
-        if (m_stopping) {
+    m_bar->setValue(m_runDone == m_runTotal ? 1000 : 0);
+    m_revealButton->setVisible(m_runDone > 0);
+    if (m_runTotal == 1) {
+        if (m_runDone > 0)
+            setStatus(tr("Fatto  ·  %1").arg(sizeText(m_runBytes)));
+        else if (stopped)
             setStatus(tr("Interrotto"));
-        } else if (!started) {
-            setStatus(tr("Impossibile avviare ffmpeg"), true);
-        } else {
-            const QStringList lines = QString::fromUtf8(m_errors).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-            setStatus(lines.isEmpty() ? tr("Conversione non riuscita") : lines.last().trimmed(), true);
-        }
+        else
+            setStatus(m_lastError, true);
+    } else if (stopped) {
+        setStatus(tr("Interrotto  ·  completati %1 di %2").arg(m_runDone).arg(m_runTotal));
+    } else if (m_runFailed == 0) {
+        setStatus(tr("Fatto  ·  %1  ·  %2").arg(tr("%n file", nullptr, m_runDone), sizeText(m_runBytes)));
+    } else {
+        setStatus(tr("Completati %1 di %2  ·  non riusciti: %3").arg(m_runDone).arg(m_runTotal).arg(m_runFailed),
+                  true);
     }
-    m_stopping = false;
     refresh();
-    // Until a choice changes, the line names the file just written instead of the next one.
-    if (ok)
+    // Until a choice changes, the line names what was just written instead of the next result.
+    if (m_runDone > 0 && m_runTotal == 1) {
         m_resultLabel->setFullText(tr("Creato:  %1").arg(QFileInfo(m_doneFile).fileName()));
+    } else if (m_runDone > 0) {
+        m_resultLabel->setFullText(
+            tr("Creati:  %1  ·  %2")
+                .arg(tr("%n file", nullptr, m_runDone),
+                     m_runDirectory.isEmpty() ? tr("accanto ai file di partenza")
+                                              : QDir::toNativeSeparators(QFileInfo(m_doneFile).absolutePath())));
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Drag and drop
 
-static QString droppedFile(const QMimeData *data)
+static QStringList droppedFiles(const QMimeData *data)
 {
+    QStringList files;
     if (!data->hasUrls())
-        return {};
-    for (const QUrl &url : data->urls()) {
+        return files;
+    const QList<QUrl> urls = data->urls();
+    for (const QUrl &url : urls) {
         if (url.isLocalFile() && QFileInfo(url.toLocalFile()).isFile())
-            return url.toLocalFile();
+            files << url.toLocalFile();
     }
-    return {};
+    return files;
 }
 
 void ConvertPage::dragEnterEvent(QDragEnterEvent *event)
 {
-    if (m_process || droppedFile(event->mimeData()).isEmpty())
+    if (m_process || droppedFiles(event->mimeData()).isEmpty())
         return;
     event->acceptProposedAction();
     m_drop->setHighlighted(true);
@@ -1174,12 +1773,13 @@ void ConvertPage::dragLeaveEvent(QDragLeaveEvent *)
     m_drop->setHighlighted(false);
 }
 
+// What is dropped joins the list.
 void ConvertPage::dropEvent(QDropEvent *event)
 {
     m_drop->setHighlighted(false);
-    const QString file = droppedFile(event->mimeData());
-    if (m_process || file.isEmpty())
+    const QStringList files = droppedFiles(event->mimeData());
+    if (m_process || files.isEmpty())
         return;
     event->acceptProposedAction();
-    setInput(file);
+    addInputs(files);
 }

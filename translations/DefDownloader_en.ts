@@ -220,8 +220,24 @@ Only when the result is an audio file: a video would go out of sync.</translatio
             <translation>Improve the audio</translation>
         </message>
         <message>
-            <source>Nella stessa cartella del file</source>
-            <translation>In the same folder as the file</translation>
+            <source>Interrotto  ·  completati %1 di %2</source>
+            <translation>Stopped  ·  %1 of %2 completed</translation>
+        </message>
+        <message>
+            <source>Fatto  ·  %1  ·  %2</source>
+            <translation>Done  ·  %1  ·  %2</translation>
+        </message>
+        <message>
+            <source>Completati %1 di %2  ·  non riusciti: %3</source>
+            <translation>Completed %1 of %2  ·  failed: %3</translation>
+        </message>
+        <message>
+            <source>Creati:  %1  ·  %2</source>
+            <translation>Created:  %1  ·  %2</translation>
+        </message>
+        <message>
+            <source>accanto ai file di partenza</source>
+            <translation>next to the original files</translation>
         </message>
         <message>
             <source>Sfoglia…</source>
@@ -244,10 +260,6 @@ Only when the result is an audio file: a video would go out of sync.</translatio
             <translation>Convert</translation>
         </message>
         <message>
-            <source>Scegli un file video o audio</source>
-            <translation>Choose a video or audio file</translation>
-        </message>
-        <message>
             <source>Video e audio (*.mp4 *.mkv *.mov *.webm *.avi *.m4v *.wmv *.flv *.ts *.mpg *.mpeg *.3gp *.gif *.mp3 *.m4a *.aac *.opus *.ogg *.oga *.flac *.wav *.wma *.aiff *.aif *.amr *.m4b *.mka);;Tutti i file (*)</source>
             <translation>Video and audio (*.mp4 *.mkv *.mov *.webm *.avi *.m4v *.wmv *.flv *.ts *.mpg *.mpeg *.3gp *.gif *.mp3 *.m4a *.aac *.opus *.ogg *.oga *.flac *.wav *.wma *.aiff *.aif *.amr *.m4b *.mka);;All files (*)</translation>
         </message>
@@ -268,8 +280,32 @@ Only when the result is an audio file: a video would go out of sync.</translatio
             <translation>Not a video or audio file ffmpeg can read</translation>
         </message>
         <message>
+            <source>Nella stessa cartella di ogni file</source>
+            <translation>In the same folder as each file</translation>
+        </message>
+        <message>
+            <source>Scegli uno o più file video o audio</source>
+            <translation>Choose one or more video or audio files</translation>
+        </message>
+        <message>
             <source>Impossibile avviare ffprobe</source>
             <translation>Could not start ffprobe</translation>
+        </message>
+        <message>
+            <source>Non riuscito</source>
+            <translation>Failed</translation>
+        </message>
+        <message>
+            <source>In coda</source>
+            <translation>Queued</translation>
+        </message>
+        <message>
+            <source>Con queste scelte questo file resterebbe com'è</source>
+            <translation>With these choices this file would stay as it is</translation>
+        </message>
+        <message>
+            <source>Nessuno di questi file si può convertire con queste scelte</source>
+            <translation>None of these files can be converted with these choices</translation>
         </message>
         <message>
             <source>al massimo %1</source>
@@ -282,6 +318,25 @@ Only when the result is an audio file: a video would go out of sync.</translatio
         <message>
             <source>Risultato:  %1</source>
             <translation>Result:  %1</translation>
+        </message>
+        <message numerus="yes">
+            <source>%n file</source>
+            <translation>
+                <numerusform>%n file</numerusform>
+                <numerusform>%n files</numerusform>
+            </translation>
+        </message>
+        <message>
+            <source>al massimo %1 in tutto</source>
+            <translation>at most %1 in total</translation>
+        </message>
+        <message>
+            <source>circa %1 in tutto</source>
+            <translation>about %1 in total</translation>
+        </message>
+        <message>
+            <source>esclusi: %1</source>
+            <translation>left out: %1</translation>
         </message>
         <message>
             <source>Ferma</source>
@@ -306,6 +361,14 @@ Only when the result is an audio file: a video would go out of sync.</translatio
         <message>
             <source>Avvio…</source>
             <translation>Starting…</translation>
+        </message>
+        <message>
+            <source>Nuovo tentativo…</source>
+            <translation>Trying again…</translation>
+        </message>
+        <message>
+            <source>File %1 di %2</source>
+            <translation>File %1 of %2</translation>
         </message>
         <message>
             <source>Arresto…</source>
@@ -454,27 +517,65 @@ Only when the result is an audio file: a video would go out of sync.</translatio
     <context>
         <name>FileDrop</name>
         <message>
-            <source>Trascina qui un file video o audio</source>
-            <translation>Drop a video or audio file here</translation>
+            <source>convertiti uno alla volta, dall'alto in basso</source>
+            <translation>converted one at a time, from top to bottom</translation>
         </message>
         <message>
-            <source>oppure sceglilo dal computer</source>
-            <translation>or choose it from your computer</translation>
+            <source>Aggiungi file…</source>
+            <translation>Add files…</translation>
+        </message>
+        <message>
+            <source>Anche trascinando altri file qui dentro</source>
+            <translation>Or drop more files in here</translation>
+        </message>
+        <message>
+            <source>Svuota</source>
+            <translation>Clear</translation>
+        </message>
+        <message>
+            <source>Toglie tutti i file dalla lista; i file restano dove sono</source>
+            <translation>Removes every file from the list; the files themselves stay where they are</translation>
+        </message>
+        <message>
+            <source>Trascina qui uno o più file video o audio</source>
+            <translation>Drop one or more video or audio files here</translation>
+        </message>
+        <message>
+            <source>oppure sceglili dal computer</source>
+            <translation>or choose them from your computer</translation>
         </message>
         <message>
             <source>Scegli file…</source>
-            <translation>Choose file…</translation>
+            <translation>Choose files…</translation>
         </message>
         <message>
             <source>Cambia file…</source>
             <translation>Change file…</translation>
         </message>
+        <message numerus="yes">
+            <source>%n file</source>
+            <translation>
+                <numerusform>%n file</numerusform>
+                <numerusform>%n files</numerusform>
+            </translation>
+        </message>
+    </context>
+    <context>
+        <name>FileRow</name>
+        <message>
+            <source>Mostra nella cartella</source>
+            <translation>Show in folder</translation>
+        </message>
+        <message>
+            <source>Togli dalla lista</source>
+            <translation>Remove from the list</translation>
+        </message>
     </context>
     <context>
         <name>MainWindow</name>
         <message>
-            <source>Converti, comprimi e migliora un file video o audio</source>
-            <translation>Convert, compress and improve a video or audio file</translation>
+            <source>Converti, comprimi e migliora file video e audio</source>
+            <translation>Convert, compress and improve video and audio files</translation>
         </message>
         <message>
             <source>Avanzata</source>
@@ -501,8 +602,8 @@ Only when the result is an audio file: a video would go out of sync.</translatio
             <translation>Version %1 of DefDownloader is out (this is %2).</translation>
         </message>
         <message>
-            <source>Per cambiare lingua la finestra viene ricreata: la lista si svuota e quello che è in corso viene fermato. Continuare?</source>
-            <translation>Changing the language rebuilds the window: the list is emptied and whatever is running is stopped. Continue?</translation>
+            <source>Per cambiare lingua la finestra viene ricreata: le liste si svuotano e quello che è in corso viene fermato. Continuare?</source>
+            <translation>Changing the language rebuilds the window: the lists are emptied and whatever is running is stopped. Continue?</translation>
         </message>
     </context>
     <context>
