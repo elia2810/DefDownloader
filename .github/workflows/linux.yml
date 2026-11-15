@@ -2,7 +2,8 @@ name: Linux build
 
 # Builds the app for Linux and packs it as an AppImage: one file with Qt and
 # the command-line tools (yt-dlp, ffmpeg, spotdl, instaloader) inside. On a
-# version tag (v*) the AppImage is attached to the release of that tag.
+# version tag (v*) the AppImage is attached to the release of that tag; the
+# text of the release is docs/release-notes/<tag>.md.
 # A branch named ci/... runs the build without touching main.
 on:
   push:
@@ -195,7 +196,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tag='${{ github.ref_name }}'
+          notes="docs/release-notes/$tag.md"
+          [ -f "$notes" ] || notes=/dev/null
           gh release view "$tag" > /dev/null 2>&1 \
-            || gh release create "$tag" --title "$tag" --notes '' --verify-tag \
+            || gh release create "$tag" --title "DefDownloader ${tag#v}" --notes-file "$notes" --verify-tag \
             || gh release view "$tag" > /dev/null
           gh release upload "$tag" DefDownloader-linux-x86_64.AppImage --clobber
