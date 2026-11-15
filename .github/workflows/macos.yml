@@ -56,7 +56,15 @@ jobs:
       - name: Smoke test
         run: |
           mkdir "$RUNNER_TEMP/dmg"
-          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/dmg" dist/DefDownloader-macos-arm64.dmg
+          # A disk image just made is often still busy on the runner: tried again.
+          for attempt in $(seq 12); do
+            hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/dmg" dist/DefDownloader-macos-arm64.dmg && break
+            if [ "$attempt" = 12 ]; then
+              echo "::error::the disk image cannot be opened"
+              exit 1
+            fi
+            sleep 10
+          done
           app="$RUNNER_TEMP/dmg/DefDownloader.app/Contents/MacOS/DefDownloader"
           sudo mv /opt/homebrew /opt/homebrew.aside
           trap 'sudo mv /opt/homebrew.aside /opt/homebrew' EXIT
