@@ -31,7 +31,10 @@ chmod +x "$OUT/yt-dlp"
 
 echo "== spotdl"
 # The asset name contains the version, so it is looked up through the API.
-url="$(curl -fsSL https://api.github.com/repos/spotDL/spotify-downloader/releases/latest \
+# With GH_TOKEN set (the automatic build) the question is asked as that user:
+# anonymous questions from a shared address are soon refused.
+url="$(curl -fsSL ${GH_TOKEN:+-H "Authorization: Bearer $GH_TOKEN"} \
+        https://api.github.com/repos/spotDL/spotify-downloader/releases/latest \
     | python3 -c 'import json, sys
 assets = json.load(sys.stdin)["assets"]
 print(next(a["browser_download_url"] for a in assets if a["name"].endswith("-darwin")))')"
