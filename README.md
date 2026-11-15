@@ -4,7 +4,7 @@
 
 *The app is also available in English (the **IT / EN** button in the top right corner). This page is in Italian.*
 
-Un'interfaccia grafica per scaricare e convertire, in italiano e in inglese. Si apre su una schermata semplice: scegli il sito, incolli i link, scegli formato e qualità e scarichi. In alto a destra ci sono il pulsante **FFMPEG**, per convertire e comprimere un file che hai già, e l'interruttore **Avanzata**, che mostra invece tutte le opzioni dei programmi a riga di comando che l'app usa.
+Un'interfaccia grafica per scaricare e convertire, in italiano e in inglese. Si apre su una schermata semplice: scegli il sito, incolli i link, scegli formato e qualità e scarichi. In alto a destra ci sono il pulsante **FFMPEG**, per convertire e comprimere i file che hai già, e l'interruttore **Avanzata**, che mostra invece tutte le opzioni dei programmi a riga di comando che l'app usa.
 
 ![La schermata semplice: una lista di link con avanzamento e velocità](docs/semplice.png)
 
@@ -22,7 +22,7 @@ Per Spotify e per i profili Instagram la barra indica solo che il download è in
 
 ## Lingua e aggiornamenti
 
-- **Lingua**: italiano o inglese, dal pulsante **IT / EN** in alto a destra. Al primo avvio l'app segue la lingua del sistema (italiano su un sistema in italiano, altrimenti inglese). Cambiando lingua la finestra viene ricreata, quindi la lista si svuota.
+- **Lingua**: italiano o inglese, dal pulsante **IT / EN** in alto a destra. Al primo avvio l'app segue la lingua del sistema (italiano su un sistema in italiano, altrimenti inglese). Cambiando lingua la finestra viene ricreata, quindi le liste si svuotano.
 - **Aggiornamenti**: all'apertura l'app chiede a GitHub qual è l'ultima versione pubblicata; se è più nuova di quella installata compare una fascia con il pulsante "Scarica", che apre la pagina delle release. Nient'altro viene inviato o scaricato. Il controllo usa `curl`, già presente su macOS, su Windows 10 e successivi e su quasi tutti i sistemi Linux: senza rete o senza `curl` non compare nulla.
 
 ![La fascia che avvisa di una versione nuova](docs/aggiornamento.png)
@@ -31,7 +31,7 @@ Per Spotify e per i profili Instagram la barra indica solo che il download è in
 
 ## Schermata FFMPEG
 
-Il pulsante **FFMPEG**, in alto a destra accanto all'interruttore, apre le conversioni già pronte: scegli (o trascini) un file video o audio e spunti quello che ti serve.
+Il pulsante **FFMPEG**, in alto a destra accanto all'interruttore, apre le conversioni già pronte: scegli (o trascini) uno o più file video o audio e spunti quello che ti serve.
 
 ![La schermata FFMPEG: un video diventa un audio per WhatsApp](docs/converti.png)
 
@@ -39,6 +39,17 @@ Il pulsante **FFMPEG**, in alto a destra accanto all'interruttore, apre le conve
 - **Comprimi l'audio**: "Fino a 64 MB" o "Fino a 16 MB", per mandare il file su WhatsApp. Il risultato è sempre un file audio (da un video viene estratto solo l'audio) con la qualità più alta che sta nel limite; se serve passa da solo a mono. Senza un formato scelto esce un mp3, oppure lo stesso formato dell'audio di partenza quando è mp3, m4a, aac, opus o ogg.
 - **Migliora l'audio**: riduci il rumore di fondo, esalta la voce, uniforma il volume, accorcia le pause di silenzio (solo quando il risultato è un file audio), mono. Si possono combinare tra loro e con la compressione. Su un video senza conversione il video resta intatto e cambia solo l'audio.
 - **Nome del risultato**: lo decide l'app, accanto al file di partenza o nella cartella scelta in "Salva in": `intervista.mp4` con voce esaltata e limite di 16 MB diventa `intervista_voce_whatsapp16.mp3` (`intervista_voice_whatsapp16.mp3` con l'app in inglese). Nessun file viene mai sovrascritto: se il nome esiste già si aggiunge un numero.
+
+### Più file insieme
+
+Trascinando nella casella più file (o scegliendoli insieme dalla finestra "Scegli file…") la casella diventa una lista, che scorre con la rotellina. "Converti" li converte in sequenza, uno alla volta, dall'alto in basso, con le stesse scelte per tutti.
+
+![La lista della schermata FFMPEG: tre file fatti, uno in corso, gli altri in coda](docs/lista-file.png)
+
+- **Righe**: ogni file ha la sua riga con nome, durata e formato, la barra di avanzamento e il cestino per toglierlo. A conversione finita la riga dice il nome del file creato e ha il pulsante che lo mostra nella cartella. La barra in basso segue l'intera lista ("File 4 di 6").
+- **Aggiungere e togliere**: altri file si aggiungono trascinandoli nella casella o con "Aggiungi file…" (un file già in lista non viene aggiunto due volte); "Svuota" toglie tutte le righe. I file sul disco non vengono toccati.
+- **File esclusi**: un file che con quelle scelte non si può convertire (un video senza audio quando chiedi un mp3, un file che ffmpeg non sa leggere) resta fuori, e la sua riga dice perché in rosso. Se una conversione non riesce la lista prosegue con le altre.
+- **Ferma e riprendi**: "Ferma" interrompe il file in corso e lascia in lista quelli non ancora fatti; "Converti" riparte da quelli, senza rifare i file già pronti. Cambiando una scelta (formato, compressione, miglioramenti, cartella) tutti i file tornano da convertire.
 
 ## Modalità avanzata
 
@@ -139,7 +150,7 @@ build/DefDownloader
 
 spotDL e instaloader sono facoltativi: senza, le loro schermate avvisano che lo strumento manca. `sudo cmake --install build --prefix /usr/local` aggiunge l'app al menu delle applicazioni, con la sua icona.
 
-Windows e Linux: i pacchetti sono automatici, vedi [.github/workflows/windows.yml](.github/workflows/windows.yml) e [.github/workflows/linux.yml](.github/workflows/linux.yml). Le build partono a ogni push su `main` e, sui tag `v*`, allegano lo zip e l'AppImage alla release. Un ramo chiamato `ci/…` fa partire la build Linux senza toccare `main`.
+Windows e Linux: i pacchetti sono automatici, vedi [.github/workflows/windows.yml](.github/workflows/windows.yml) e [.github/workflows/linux.yml](.github/workflows/linux.yml). Le build partono a ogni push su `main` e, sui tag `v*`, allegano lo zip e l'AppImage alla release; il testo della release è il file `docs/release-notes/<tag>.md`. Un ramo chiamato `ci/…` fa partire la build Linux senza toccare `main`.
 
 ## Licenza
 
